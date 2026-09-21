@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Carteira{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem;">
+    <a class="back-btn" href="/vendedor/crm">&lsaquo; Voltar</a>
+    <a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/novo">+ Novo cliente</a>
+</div>
+<h1>Carteira de Clientes</h1>
+
+<div class="carteira-resumo">
+    <div class="cr-clientes">
+        <span class="cr-num">{{ total }}</span>
+        <span class="cr-label">clientes na carteira</span>
+    </div>
+    <div class="cr-estados">
+        {% for uf, info in por_estado.items() %}
+        <div class="cr-estado-row">
+            <div class="cr-estado-nome">{{ uf }}</div>
+            <div class="cr-estado-bar"><div class="cr-estado-fill" style="width:{{ (info.clientes / total * 100) if total else 0 }}%;"></div></div>
+            <div class="cr-estado-info">{{ info.clientes }} clientes · {{ info.area|numbr(0) }} ha</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="stats-grid">
+    {% for f in fases %}
+    <a class="stat-card {{ f.cor }}" href="/vendedor/crm/fase/{{ f.chave }}">
+        <span class="num">{{ f.qtd }}</span>
+        <div class="label">{{ f.label }}</div>
+        <div class="pct">{{ "%.1f"|format(f.pct) }}%</div>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

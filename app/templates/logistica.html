@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Logistica{% endblock %}
+{% block content %}
+<h1>Pedidos em aberto — ordenados por Ton/Dia Necessario (maior primeiro)</h1>
+<div class="summary-cards">
+    <div class="card"><span class="card-value">{{ pedidos|length }}</span><span class="card-label">Pedidos nesta visao</span></div>
+    <div class="card card-danger"><span class="card-value">{{ vencidos }}</span><span class="card-label">Prazos vencidos</span></div>
+    <div class="card"><span class="card-value">{{ total_saldo|numbr(0) }}</span><span class="card-label">Toneladas em aberto</span></div>
+    <div class="card"><span class="card-value" style="font-size:1.1rem; color:var(--ink-soft);">Aguardando NetSuite</span><span class="card-label">Tempo medio de carregamento</span></div>
+</div>
+
+{% if sem_prazo %}
+<div class="aviso-dados-exemplo" style="border-color:var(--gold); font-weight:500;">
+    ⚠ {{ sem_prazo }} pedido{{ "s" if sem_prazo != 1 else "" }} nesta visao ainda sem Data Limite de Retirada definida —
+    sem essa data nao da pra calcular o Ton/Dia e priorizar direito. Preencha assim que souber o prazo combinado com o cliente.
+</div>
+{% endif %}
+
+<form method="get" action="/logistica" class="form-inline">
+    <label style="position:relative;">Buscar cliente, codigo ou pedido
+        <input type="text" name="cliente" id="busca-cliente" value="{{ filtros.cliente }}"
+               placeholder="Nome, codigo ou numero do pedido..." autocomplete="off">
+        <div id="busca-sugestoes" class="autocomplete-lista"></div>
+    </label>
+    <label>Data pedido de<input type="date" name="data_de" value="{{ filtros.data_de }}"></label>
+    <label>ate<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
+    <label>Estado
+        <select name="uf">
+            <option value="">Todos</option>
+            {% for e in estados %}
+            <option value="{{ e }}" {% if filtros.uf == e %}selected{% endif %}>{{ e }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Produto
+        <select name="produto">
+            <option value="">Todos</option>
+            {% for p in produtos %}
+            <option value="{{ p }}" {% if filtros.produto == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit">Filtrar</button>
+    {% if filtros.data_de or filtros.data_ate or filtros.uf or filtros.produto or filtros.cliente %}<a class="back-btn" href="/logistica" style="margin-bottom:0;">Limpar</a>{% endif %}
+</form>
+<p class="aviso-dados-exemplo" style="margin-top:0.8rem;">
+    Os filtros de Estado e Produto ja estao prontos, mas so vao funcionar de verdade quando a integracao com o NetSuite trouxer esses dados por pedido.
+</p>
+
+<table class="tabela" id="tabela-pedidos" style="margin-top:1rem;">
+    <thead>
+        <tr>
+            <th>Cliente</th>
+            <th>Pedido</th>
+            <th>Volume (t)</th>
+            <th>Saldo (t)</th>
+            <th>Vendedor</th>
+            <th>Data Pedido</th>
+            <th>Data Limite Retirada</th>
+            <th>Dias Restantes</th>
+            <th>Ton/Dia Necessario</th>
+            <th>Contato</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pedidos %}
+        <tr id="row-{{ p.id }}" class="{% if p.vencido() %}linha-vencida{% endif %}">
+            <td><a href="/clientes/pedidos?nome={{ p.cliente|urlencode }}">{{ p.cliente }}</a></td>
+            <td>
+                {{ p.numero_pedido }}
+                {% if p.possivel_pedido_parado() %}<br><span class="badge-vencido" style="background:var(--gold);">PAROU DE RETIRAR</span>{% endif %}
+            </td>
+            <td>{{ p.quant_total|numbr }}</td>
+            <td>{{ p.saldo|numbr }}</td>
+            <td>{{ p.vendedor or "-" }}</td>
+            <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}</td>
+            <td>
+                <input type="date" class="input-prazo" data-id="{{ p.id }}"
+                       value="{{ p.data_limite_retirada.isoformat() if p.data_limite_retirada else '' }}">
+            </td>
+            <td class="col-dias">{{ p.dias_restantes() if p.dias_restantes() is not none else "-" }}</td>
+            <td class="col-tondia">
+                {% if p.vencido() %}<span class="badge badge-vencido">VENCIDO</span>
+                {% elif p.ton_dia_necessario() is not none %}{{ p.ton_dia_necessario()|numbr }}
+                {% else %}-{% endif %}
+            </td>
+            <td>
+                <a class="back-btn" style="margin-bottom:4px; display:block; text-align:center;" href="/pedidos/{{ p.id }}/conversa">
+                    Falar com vendedor
+                    {% if mensagens_nao_lidas.get(p.id) %}<span class="menu-badge" style="position:static; display:inline-flex; margin-left:4px;">{{ mensagens_nao_lidas[p.id] }}</span>{% endif %}
+                </a>
+                <a class="back-btn" style="margin-bottom:4px; display:block; text-align:center;" href="/clientes/pedidos?nome={{ p.cliente|urlencode }}">Ver cliente e pedidos</a>
+                {% if p.vencido() or p.possivel_pedido_parado() or p.situacao_resolucao %}
+                <a class="back-btn" style="margin-bottom:0; display:block; text-align:center; border-color:var(--gold); color:var(--gold);" href="/pedidos/{{ p.id }}/resolver">
+                    {% if p.situacao_resolucao %}Situacao: {{ resolucao_label.get(p.situacao_resolucao, p.situacao_resolucao) }}{% else %}Resolver pendencia{% endif %}
+                </a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+document.querySelectorAll(".input-prazo").forEach(function (input) {
+    input.addEventListener("change", function () {
+        const id = input.dataset.id;
+        const row = document.getElementById("row-" + id);
+        const body = new URLSearchParams({ data_limite: input.value });
+        fetch(`/api/pedidos/${id}/prazo`, { method: "POST", body })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                row.querySelector(".col-dias").textContent = data.dias_restantes ?? "-";
+                const tonCell = row.querySelector(".col-tondia");
+                if (data.vencido) {
+                    tonCell.innerHTML = '<span class="badge badge-vencido">VENCIDO</span>';
+                    row.classList.add("linha-vencida");
+                } else if (data.ton_dia !== null && data.ton_dia !== undefined) {
+                    tonCell.textContent = data.ton_dia.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+                    row.classList.remove("linha-vencida");
+                } else {
+                    tonCell.textContent = "-";
+                    row.classList.remove("linha-vencida");
+                }
+            });
+    });
+});
+
+(function () {
+    const input = document.getElementById("busca-cliente");
+    const lista = document.getElementById("busca-sugestoes");
+    let temporizador = null;
+
+    function esconder() { lista.innerHTML = ""; lista.classList.remove("show"); }
+
+    input.addEventListener("input", function () {
+        const termo = input.value.trim();
+        clearTimeout(temporizador);
+        if (termo.length < 2) { esconder(); return; }
+        temporizador = setTimeout(function () {
+            fetch(`/api/busca-clientes?q=${encodeURIComponent(termo)}`)
+                .then(function (r) { return r.json(); })
+                .then(function (itens) {
+                    if (!itens.length) { esconder(); return; }
+                    lista.innerHTML = itens.map(function (item) {
+                        return `<div class="autocomplete-item" data-cliente="${item.cliente.replace(/"/g, "&quot;")}">${item.label}</div>`;
+                    }).join("");
+                    lista.classList.add("show");
+                });
+        }, 250);
+    });
+
+    lista.addEventListener("click", function (ev) {
+        const item = ev.target.closest(".autocomplete-item");
+        if (!item) return;
+        input.value = item.dataset.cliente;
+        esconder();
+        input.form.submit();
+    });
+
+    document.addEventListener("click", function (ev) {
+        if (ev.target !== input) esconder();
+    });
+})();
+</script>
+{% endblock %}

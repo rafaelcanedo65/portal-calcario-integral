@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Conversa sobre pedido{% endblock %}
+{% block content %}
+<a class="back-btn" href="javascript:history.back()">&lsaquo; Voltar</a>
+<h1>Pedido {{ pedido.numero_pedido }}</h1>
+<p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-0.8rem; margin-bottom:1.2rem;">
+    {{ pedido.cliente }} · Vendedor: {{ pedido.vendedor or "-" }} · Saldo: {{ pedido.saldo|numbr }} t
+</p>
+
+<div class="ficha-cliente">
+    <div>
+        <div class="card">
+            <h2 style="margin-bottom:1rem;">Conversa sobre este pedido</h2>
+            <ul class="timeline">
+                {% for m in mensagens %}
+                <li class="tl-item {% if m.autor_role in ('admin','logistica') %}tl-fase{% endif %}">
+                    <div>
+                        <span class="tl-date">{{ m.autor_nome }} ({{ m.autor_role }}) · {{ m.criado_em.strftime("%d/%m/%Y %H:%M") }}</span>
+                        <div class="tl-text">{{ m.texto }}</div>
+                    </div>
+                </li>
+                {% else %}
+                <li style="color:var(--ink-soft); font-size:0.85rem;">Nenhuma mensagem ainda.</li>
+                {% endfor %}
+            </ul>
+            <form method="post" action="/pedidos/{{ pedido.id }}/conversa" class="note-form">
+                <input type="text" name="texto" placeholder="Escrever mensagem..." required>
+                <button type="submit">Enviar</button>
+            </form>
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <h2 style="margin-bottom:1rem;">Cliente</h2>
+            {% if cliente_crm %}
+            <div class="field2" style="margin-bottom:8px;"><label>Proprietario</label><div class="valor">{{ cliente_crm.proprietario or "-" }}</div></div>
+            <div class="field2" style="margin-bottom:8px;"><label>Telefone</label><div class="valor">{{ cliente_crm.telefone or "-" }}</div></div>
+            <a class="back-btn" style="margin-top:8px;" href="/crm/cliente/{{ cliente_crm.id }}">Abrir cadastro completo</a>
+            {% else %}
+            <p style="color:var(--ink-soft); font-size:0.85rem;">
+                Este cliente ainda nao foi reconciliado com um cadastro no CRM — nao ha telefone disponivel aqui ainda.
+                Isso deve se resolver quando a integracao com o NetSuite trouxer o vinculo direto.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

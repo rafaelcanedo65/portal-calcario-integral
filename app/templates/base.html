@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Portal{% endblock %} · Calcario Integral</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    {% if user %}
+    <header class="topbar">
+        <div class="brand">Portal Calcario Integral</div>
+        <nav>
+            {% if user.role in ("admin", "logistica") %}
+            <a href="/logistica">Logistica</a>
+            {% endif %}
+            {% if user.role in ("admin", "vendedor") %}
+            <a href="/vendedor">Pedidos</a>
+            {% endif %}
+            {% if user.role in ("admin", "logistica") %}
+            <a href="/crm">CRM</a>
+            {% elif user.role == "vendedor" %}
+            <a href="/vendedor/crm">CRM</a>
+            {% endif %}
+            {% if user.role == "admin" %}
+            <a href="/admin/usuarios">Usuarios</a>
+            {% endif %}
+        </nav>
+        <div class="user-info">
+            {{ user.nome_completo }} <span class="pill role-{{ user.role }}">{{ user.role }}</span>
+            <button class="logout-btn" onclick="window.location='/logout'">Sair</button>
+        </div>
+    </header>
+    {% endif %}
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

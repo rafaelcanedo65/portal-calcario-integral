@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Usuarios{% endblock %}
+{% block content %}
+<h1>Usuarios do portal</h1>
+{% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+
+<table class="tabela">
+    <thead><tr><th>Usuario</th><th>Nome</th><th>Papel</th><th>Vendedor vinculado</th><th>Ativo</th></tr></thead>
+    <tbody>
+        {% for u in usuarios %}
+        <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.nome_completo }}</td>
+            <td><span class="badge role-{{ u.role }}">{{ u.role }}</span></td>
+            <td>{{ u.vendedor_nome or "-" }}</td>
+            <td>{{ "Sim" if u.ativo else "Nao" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Criar novo usuario</h2>
+<form method="post" action="/admin/usuarios" class="form-inline">
+    <label>Usuario<input type="text" name="username" required></label>
+    <label>Senha inicial<input type="text" name="senha" required></label>
+    <label>Nome completo<input type="text" name="nome_completo" required></label>
+    <label>Papel
+        <select name="role">
+            <option value="vendedor">vendedor</option>
+            <option value="logistica">logistica</option>
+            <option value="admin">admin</option>
+        </select>
+    </label>
+    <label>Nome do vendedor na planilha (se papel = vendedor)<input type="text" name="vendedor_nome"></label>
+    <button type="submit">Criar usuario</button>
+</form>
+{% endblock %}

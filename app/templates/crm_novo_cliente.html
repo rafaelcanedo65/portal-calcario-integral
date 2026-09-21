@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Novo cliente{% endblock %}
+{% block content %}
+<a class="back-btn" href="{{ '/crm' if user.role != 'vendedor' else '/vendedor/crm/carteira' }}">&lsaquo; Voltar</a>
+<h1>Cadastrar cliente</h1>
+
+{% if erro %}<div class="erro" style="margin-bottom:1rem; max-width:640px;">{{ erro }}</div>{% endif %}
+
+{% if similares %}
+<div class="aviso-dados-exemplo" style="max-width:640px;">
+    Ja existe{{ "m" if similares|length > 1 }} cliente{{ "s" if similares|length > 1 }} com nome parecido
+    {{ "na sua carteira" if form.vendedor else "cadastrado" }}:
+    <ul style="margin:6px 0 0; padding-left:1.2rem;">
+        {% for s in similares %}
+        <li><a href="/crm/cliente/{{ s.id }}" target="_blank">{{ s.fazenda }}</a> — {{ s.cidade }}, {{ s.uf }} · vendedor: {{ s.vendedor_nome or "-" }}</li>
+        {% endfor %}
+    </ul>
+    <p style="margin:8px 0 0;">Confira se nao e o mesmo cliente antes de cadastrar de novo.</p>
+</div>
+{% endif %}
+
+<div class="card" style="max-width:640px;">
+    <form method="post" action="/crm/cliente/novo">
+        <div class="ficha-grid">
+            <div class="field2" style="grid-column:1/3;"><label>Nome da fazenda / empresa *</label><input type="text" name="fazenda" value="{{ form.fazenda or '' }}" required></div>
+            <div class="field2"><label>Cidade *</label><input type="text" name="cidade" value="{{ form.cidade or '' }}" required></div>
+            <div class="field2"><label>Estado *</label>
+                <select name="uf" required>
+                    <option value="">Selecione...</option>
+                    {% for uf in estados %}
+                    <option value="{{ uf }}" {% if form.uf == uf %}selected{% endif %}>{{ uf }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field2"><label>Proprietario / contato *</label><input type="text" name="proprietario" value="{{ form.proprietario or '' }}" required></div>
+            <div class="field2"><label>Telefone *</label><input type="text" name="telefone" value="{{ form.telefone or '' }}" placeholder="DDD + numero, ex: 86 99945-0475" required></div>
+            <div class="field2"><label>Email</label><input type="text" name="email" value="{{ form.email or '' }}"></div>
+            <div class="field2"><label>CNPJ</label><input type="text" name="cnpj" value="{{ form.cnpj or '' }}"></div>
+            <div class="field2"><label>Empresa</label><input type="text" name="empresa" value="{{ form.empresa or '' }}"></div>
+            <div class="field2"><label>Area plantada (ha)</label><input type="number" step="0.01" name="area_plantada_ha" value="{{ form.area_plantada_ha or '' }}"></div>
+            <div class="field2"><label>Tem frota propria?</label>
+                <select name="frota_propria">
+                    <option value="" {% if not form.frota_propria %}selected{% endif %}>Nao informado</option>
+                    <option value="sim" {% if form.frota_propria == "sim" %}selected{% endif %}>Sim</option>
+                    <option value="nao" {% if form.frota_propria == "nao" %}selected{% endif %}>Nao</option>
+                </select>
+            </div>
+            {% if user.role == "admin" %}
+            <div class="field2" style="grid-column:1/3;"><label>Vendedor</label>
+                <select name="vendedor">
+                    <option value="">Sem vendedor definido</option>
+                    {% for v in vendedores %}
+                    <option value="{{ v }}" {% if form.vendedor == v %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="field2" style="grid-column:1/3;">
+                <label>Coordenadas da fazenda</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" name="coordenadas" id="coordenadas" value="{{ form.coordenadas or '' }}" style="flex:1; width:auto; min-width:0;">
+                    <button type="button" class="btn-secondary" onclick="usarLocalizacaoAtual()" style="white-space:nowrap;">📍 Usar minha localizacao</button>
+                </div>
+                <p style="font-size:0.72rem; color:var(--ink-soft); margin:4px 0 0;">Pelo celular, use isso quando estiver na fazenda pra preencher automaticamente.</p>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="submit">Cadastrar cliente</button>
+            {% if similares %}<button type="submit" name="confirmar_similar" value="1" class="btn-secondary">Cadastrar mesmo assim</button>{% endif %}
+        </div>
+    </form>
+</div>
+<script>
+function usarLocalizacaoAtual(){
+    if (!navigator.geolocation) { alert("Geolocalizacao nao esta disponivel neste navegador."); return; }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+        document.getElementById("coordenadas").value = pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6);
+    }, function () {
+        alert("Nao foi possivel obter sua localizacao. Verifique se o navegador tem permissao de GPS.");
+    }, {enableHighAccuracy: true, timeout: 10000});
+}
+</script>
+{% endblock %}

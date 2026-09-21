@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}CRM{% endblock %}
+{% block content %}
+<p style="color:var(--ink-soft); font-size:0.85rem;">Ola,</p>
+<h1>{{ user.nome_completo }}</h1>
+
+{% if compradores_mes > 0 %}
+<a href="/vendedor/crm/fase/a_contactar?ordenar=sazonalidade" class="aviso-compra-mes">
+    🗓️ <b>{{ compradores_mes }}</b> cliente{{ "s" if compradores_mes != 1 }} costuma{{ "m" if compradores_mes != 1 }}
+    comprar em <b>{{ mes_atual_nome }}</b> — bom momento pra entrar em contato ›
+</a>
+{% endif %}
+
+<div class="menu-grid">
+    <a class="menu-card" href="/vendedor/crm/carteira">
+        <span class="micon">📋</span>
+        <div class="mlabel">Carteira de Clientes</div>
+        <div class="msub">{{ total_clientes }} clientes</div>
+    </a>
+    <a class="menu-card" href="/vendedor/crm/agenda">
+        <span class="micon">📅</span>
+        <div class="mlabel">Agenda</div>
+        <div class="msub">Retornos agendados</div>
+    </a>
+    <a class="menu-card" href="/vendedor/crm/fase/a_contactar" style="position:relative;">
+        <span class="micon">🔔</span>
+        <div class="mlabel">Avisos</div>
+        <div class="msub">{{ novos_aviso }} para contactar</div>
+        {% if novos_aviso %}<span class="menu-badge">{{ novos_aviso }}</span>{% endif %}
+    </a>
+    <a class="menu-card" href="/crm/cliente/novo">
+        <span class="micon">➕</span>
+        <div class="mlabel">Cadastrar Cliente</div>
+        <div class="msub">Novo cliente na carteira</div>
+    </a>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Resolver pedido{% endblock %}
+{% block content %}
+<a class="back-btn" href="/logistica">&lsaquo; Voltar</a>
+<h1>Pedido {{ pedido.numero_pedido }}</h1>
+<p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-0.8rem; margin-bottom:1.2rem;">
+    {{ pedido.cliente }} · Vendedor: {{ pedido.vendedor or "-" }} · Volume {{ pedido.quant_total|numbr }} t ·
+    Saldo {{ pedido.saldo|numbr }} t
+    {% if pedido.dias_parado() is not none %} · Sem retirada ha {{ pedido.dias_parado() }} dias{% endif %}
+</p>
+
+{% if pedido.situacao_resolucao %}
+<div class="aviso-dados-exemplo" style="max-width:640px;">
+    Situacao atual: <strong>{{ resolucao_label.get(pedido.situacao_resolucao, pedido.situacao_resolucao) }}</strong>
+    {% if pedido.situacao_observacao %}<br>Obs: {{ pedido.situacao_observacao }}{% endif %}
+</div>
+<form method="post" action="/api/pedidos/{{ pedido.id }}/situacao" style="margin-bottom:1.5rem;">
+    <input type="hidden" name="situacao" value="reabrir">
+    <button type="submit">Reabrir pedido (voltar pra lista de em aberto)</button>
+</form>
+{% endif %}
+
+<div class="card" style="max-width:640px;">
+    <h2 style="margin-bottom:1rem;">Marcar situacao deste pedido</h2>
+    <p style="color:var(--ink-soft); font-size:0.82rem; margin-bottom:1rem;">
+        Use isso quando o cliente parou de retirar e o caso ja foi resolvido de algum jeito
+        (nao precisa mais aparecer como pendencia urgente na Logistica).
+    </p>
+    <form method="post" action="/api/pedidos/{{ pedido.id }}/situacao">
+        <div class="field2" style="margin-bottom:10px;">
+            <label>O que aconteceu?</label>
+            <select name="situacao">
+                <option value="finalizado_parcial">{{ resolucao_label["finalizado_parcial"] }} — cliente nao vai retirar o resto</option>
+                <option value="renegociar">{{ resolucao_label["renegociar"] }} — avisar o vendedor pra reabrir com outro pedido</option>
+                <option value="aguardando_proximo_periodo">{{ resolucao_label["aguardando_proximo_periodo"] }} — ja pago, vai retirar depois</option>
+            </select>
+        </div>
+        <div class="field2" style="margin-bottom:10px;">
+            <label>Observacao</label>
+            <textarea name="observacao" rows="3" placeholder="O que foi combinado com o cliente..." style="padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-family:inherit; font-size:0.85rem; resize:vertical;"></textarea>
+        </div>
+        <button type="submit">Salvar situacao</button>
+    </form>
+</div>
+{% endblock %}

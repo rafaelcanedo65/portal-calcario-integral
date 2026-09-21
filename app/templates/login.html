@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Entrar{% endblock %}
+{% block content %}
+<div class="login-box">
+    <h1>Portal Calcario Integral</h1>
+    {% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+    <form method="post" action="/login">
+        <label>Usuario</label>
+        <input type="text" name="username" required autofocus>
+        <label>Senha</label>
+        <input type="password" name="password" required>
+        <button type="submit">Entrar</button>
+    </form>
+</div>
+{% endblock %}

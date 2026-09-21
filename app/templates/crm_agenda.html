@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Agenda{% endblock %}
+{% block content %}
+<a class="back-btn" href="/vendedor/crm">&lsaquo; Voltar</a>
+<h1>Agenda <span style="font-family:'Work Sans'; font-size:0.9rem; color:var(--ink-soft); font-weight:400;">{{ total_retornos }} retornos agendados</span></h1>
+
+<div class="agenda-cal-header">
+    <a class="back-btn" href="?ano={{ mes_anterior[0] }}&mes={{ mes_anterior[1] }}" style="margin-bottom:0;">&lsaquo;</a>
+    <div class="agenda-cal-titulo">{{ mes_nome }} {{ ano }}</div>
+    <a class="back-btn" href="?ano={{ mes_seguinte[0] }}&mes={{ mes_seguinte[1] }}" style="margin-bottom:0;">&rsaquo;</a>
+</div>
+
+<div class="agenda-cal-grid">
+    {% for dow in ["D","S","T","Q","Q","S","S"] %}
+    <div class="agenda-cal-dow">{{ dow }}</div>
+    {% endfor %}
+    {% for semana in semanas %}
+        {% for dia in semana %}
+            {% if dia == 0 %}
+            <div class="agenda-cal-cell agenda-cal-vazia"></div>
+            {% else %}
+            <a class="agenda-cal-cell{% if dia == hoje.day and mes == hoje.month and ano == hoje.year %} agenda-cal-hoje{% endif %}{% if dia == dia_selecionado %} agenda-cal-selecionada{% endif %}"
+               href="?ano={{ ano }}&mes={{ mes }}&dia={{ dia }}">
+                {{ dia }}
+                {% if dia in retornos_por_dia %}<span class="agenda-cal-bolinha"></span>{% endif %}
+            </a>
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+</div>
+
+{% if dia_selecionado %}
+<h2>Retornos em {{ "%02d"|format(dia_selecionado) }}/{{ "%02d"|format(mes) }}/{{ ano }}</h2>
+{% for c in clientes_do_dia %}
+<a class="agenda-item" href="/crm/cliente/{{ c.id }}">
+    <strong>{{ c.fazenda }}</strong> · {{ c.cidade }}, {{ c.uf }} · {{ c.telefone or "-" }}
+</a>
+{% else %}
+<p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum retorno agendado neste dia.</p>
+{% endfor %}
+{% else %}
+<p style="color:var(--ink-soft); font-size:0.85rem;">Clique num dia marcado no calendario para ver os retornos agendados.</p>
+{% endif %}
+{% endblock %}

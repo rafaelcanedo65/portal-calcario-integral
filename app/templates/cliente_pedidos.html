@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ nome }}{% endblock %}
+{% block content %}
+<a class="back-btn" href="javascript:history.back()">&lsaquo; Voltar</a>
+<h1>{{ nome }}</h1>
+
+<div class="ficha-cliente">
+    <div>
+        <div class="card">
+            <h2 style="margin-bottom:1rem;">Pedidos deste cliente</h2>
+            <p style="color:var(--ink-soft); font-size:0.85rem; margin-bottom:1rem;">
+                {{ pedidos|length }} pedido{{ "s" if pedidos|length != 1 else "" }} · {{ total_saldo|numbr }} t em aberto no total
+            </p>
+            <table class="tabela">
+                <thead>
+                    <tr>
+                        <th>Pedido</th><th>Data</th><th>Status</th><th>Volume (t)</th><th>Saldo (t)</th>
+                        <th>Data Limite</th><th>Ton/Dia</th><th>Contato</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pedidos %}
+                    <tr class="{% if p.vencido() %}linha-vencida{% endif %}">
+                        <td>{{ p.numero_pedido }}</td>
+                        <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}</td>
+                        <td>{{ p.status }}</td>
+                        <td>{{ p.quant_total|numbr }}</td>
+                        <td>{{ p.saldo|numbr }}</td>
+                        <td>{{ p.data_limite_retirada.strftime("%d/%m/%Y") if p.data_limite_retirada else "-" }}</td>
+                        <td>
+                            {% if p.vencido() %}<span class="badge badge-vencido">VENCIDO</span>
+                            {% elif p.ton_dia_necessario() is not none %}{{ p.ton_dia_necessario()|numbr }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td><a class="back-btn" style="margin-bottom:0;" href="/pedidos/{{ p.id }}/conversa">Conversa</a></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8">Nenhum pedido encontrado para este cliente.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <h2 style="margin-bottom:1rem;">Dados do cliente</h2>
+            {% if cliente_crm %}
+            <div class="field2" style="margin-bottom:8px;"><label>Proprietario</label><div class="valor">{{ cliente_crm.proprietario or "-" }}</div></div>
+            <div class="field2" style="margin-bottom:8px;"><label>Telefone</label><div class="valor">{{ cliente_crm.telefone or "-" }}</div></div>
+            <div class="field2" style="margin-bottom:8px;"><label>Cidade</label><div class="valor">{{ cliente_crm.cidade }}, {{ cliente_crm.uf }}</div></div>
+            <div class="field2" style="margin-bottom:8px;"><label>Forma de pagamento</label><div class="valor">{{ cliente_crm.forma_pagamento or "-" }}</div></div>
+            <a class="back-btn" style="margin-top:8px;" href="/crm/cliente/{{ cliente_crm.id }}">Abrir cadastro completo no CRM</a>
+            {% else %}
+            <p style="color:var(--ink-soft); font-size:0.85rem;">
+                Este cliente ainda nao foi reconciliado com um cadastro no CRM — sem telefone disponivel aqui ainda.
+                Isso deve se resolver quando a integracao com o NetSuite trouxer o vinculo direto.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

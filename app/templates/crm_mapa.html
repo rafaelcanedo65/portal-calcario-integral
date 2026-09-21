@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}CRM{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem;">
+    <div>
+        <h1>Mapa de clientes por estado</h1>
+    </div>
+    <div style="display:flex; gap:10px; align-items:flex-start;">
+        <div style="position:relative;">
+            <input type="text" id="busca-cliente-crm" placeholder="Buscar cliente ou cidade..." style="width:220px;" autocomplete="off">
+            <div id="busca-crm-sugestoes" class="autocomplete-lista"></div>
+        </div>
+        <a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/novo">+ Novo cliente</a>
+        {% if user.role == "admin" %}<a class="back-btn" style="margin-bottom:0;" href="/crm/log">Log de atividades</a>{% endif %}
+    </div>
+</div>
+
+{% if user.role == "admin" %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2 style="margin-bottom:1rem;">Desempenho por vendedor</h2>
+    <form method="get" action="/crm" class="form-inline">
+        <label>Vendedor
+            <select name="vendedor">
+                <option value="">Selecione...</option>
+                {% for v in vendedores %}
+                <option value="{{ v }}" {% if filtro_vendedor == v %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Periodo de<input type="date" name="data_de" value="{{ filtro_data_de }}"></label>
+        <label>ate<input type="date" name="data_ate" value="{{ filtro_data_ate }}"></label>
+        <button type="submit">Ver desempenho</button>
+    </form>
+
+    {% if relatorio %}
+    <div style="margin-top:1.2rem;">
+        <p style="color:var(--ink-soft); font-size:0.85rem;">
+            {{ relatorio.vendedor }} · {{ relatorio.data_de.strftime("%d/%m/%Y") }} a {{ relatorio.data_ate.strftime("%d/%m/%Y") }} ·
+            {{ relatorio.total_clientes }} clientes na carteira
+        </p>
+
+        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); max-width:100%;">
+            <div class="stat-card">
+                <span class="num">{{ relatorio.tocados }}</span>
+                <div class="label">Clientes com contato no periodo</div>
+            </div>
+            <div class="stat-card clay">
+                <span class="num">{{ relatorio.progressao.contactado }}</span>
+                <div class="label">Avancaram p/ Contactados</div>
+            </div>
+            <div class="stat-card blue">
+                <span class="num">{{ relatorio.progressao.proposta }}</span>
+                <div class="label">Avancaram p/ Proposta</div>
+            </div>
+            <div class="stat-card green">
+                <span class="num">{{ relatorio.progressao.realizado }}</span>
+                <div class="label">Realizados</div>
+            </div>
+            <div class="stat-card red">
+                <span class="num">{{ relatorio.progressao.perdido }}</span>
+                <div class="label">Perdidos</div>
+            </div>
+            <div class="stat-card grey">
+                <span class="num">{{ relatorio.progressao.nao_usara }}</span>
+                <div class="label">Nao usara</div>
+            </div>
+        </div>
+
+        <h3 style="font-size:1rem; margin:1.5rem 0 0.8rem;">Situacao atual da carteira (nao depende do periodo)</h3>
+        <div class="summary-cards">
+            <div class="card">
+                <span class="card-value">R$ {{ relatorio.valor_proposta|numbr(0) }}</span>
+                <span class="card-label">Valor em proposta (aberto)</span>
+            </div>
+            <div class="card">
+                <span class="card-value">{{ relatorio.volume_vendido|numbr(0) }} t</span>
+                <span class="card-label">Volume vendido (realizado)</span>
+            </div>
+            <div class="card">
+                <span class="card-value">{{ relatorio.volume_retirado|numbr(0) }} t</span>
+                <span class="card-label">Volume ja retirado</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="aviso-dados-exemplo">
+    Dados reais importados da planilha "Controle". Area de referencia por estado ainda e placeholder,
+    nao confirmada com fonte oficial (IBGE/SIDRA).
+</div>
+
+<p style="color:var(--ink-soft); font-size:0.85rem; margin-bottom:1rem;">
+    {{ total_clientes }} clientes · {{ total_area|numbr(0) }} ha capturados. Clique num estado para ver o funil.
+</p>
+
+<div id="mapa-brasil-wrap" style="position:relative; max-width:720px;">
+    <svg id="mapa-brasil-svg" viewBox="0 0 220000 194010" style="width:100%; height:auto;"></svg>
+    <div id="mapa-brasil-tooltip" class="mapa-tooltip"></div>
+</div>
+
+<script>
+var DADOS_ESTADOS = {{ estados|tojson }};
+</script>
+
+<script>
+(function () {
+    const input = document.getElementById("busca-cliente-crm");
+    const lista = document.getElementById("busca-crm-sugestoes");
+    let temporizador = null;
+    function esconder() { lista.innerHTML = ""; lista.classList.remove("show"); }
+    input.addEventListener("input", function () {
+        const termo = input.value.trim();
+        clearTimeout(temporizador);
+        if (termo.length < 2) { esconder(); return; }
+        temporizador = setTimeout(function () {
+            fetch(`/api/busca-crm-clientes?q=${encodeURIComponent(termo)}`)
+                .then(function (r) { return r.json(); })
+                .then(function (itens) {
+                    if (!itens.length) { esconder(); return; }
+                    lista.innerHTML = itens.map(function (item) {
+                        return `<div class="autocomplete-item" data-id="${item.id}">${item.label}</div>`;
+                    }).join("");
+                    lista.classList.add("show");
+                });
+        }, 250);
+    });
+    lista.addEventListener("click", function (ev) {
+        const item = ev.target.closest(".autocomplete-item");
+        if (!item) return;
+        window.location = `/crm/cliente/${item.dataset.id}`;
+    });
+    document.addEventListener("click", function (ev) {
+        if (ev.target !== input) esconder();
+    });
+})();
+
+(function () {
+    const svgEl = document.getElementById("mapa-brasil-svg");
+    const tooltip = document.getElementById("mapa-brasil-tooltip");
+    const SVGNS = "http://www.w3.org/2000/svg";
+    const porUf = {};
+    DADOS_ESTADOS.forEach(function (e) { porUf[e.uf] = e; });
+
+    fetch("/static/brasil_estados.json")
+        .then(function (r) { return r.json(); })
+        .then(function (geo) {
+            const grupoRotulos = document.createElementNS(SVGNS, "g");
+            const interativos = [];
+
+            // 1a passada: desenha todos os estados primeiro, sem nenhum rotulo ainda,
+            // pra nenhum preenchimento de estado vizinho ficar por cima de um texto.
+            Object.keys(geo.estados).forEach(function (uf) {
+                const info = geo.estados[uf];
+                const dado = porUf[uf];
+                const path = document.createElementNS(SVGNS, "path");
+                path.setAttribute("d", info.d);
+                path.setAttribute("class", dado ? "estado-ativo" : "estado-inativo");
+
+                if (dado) {
+                    const link = document.createElementNS(SVGNS, "a");
+                    link.setAttributeNS("http://www.w3.org/1999/xlink", "href", `/crm/estado/${uf}`);
+                    link.setAttribute("href", `/crm/estado/${uf}`);
+                    link.appendChild(path);
+                    svgEl.appendChild(link);
+                    interativos.push({ el: path, uf: uf, dado: dado, nome: info.nome });
+                } else {
+                    svgEl.appendChild(path);
+                }
+            });
+
+            // 2a passada: todos os rotulos, num grupo proprio adicionado por ultimo
+            // (fica sempre por cima de qualquer preenchimento de estado).
+            Object.keys(geo.estados).forEach(function (uf) {
+                const info = geo.estados[uf];
+                const dado = porUf[uf];
+                if (!dado) return;
+
+                const pctTexto = dado.pct.toFixed(1) + "%";
+                const rotulo = document.createElementNS(SVGNS, "text");
+                rotulo.setAttribute("x", info.cx);
+                rotulo.setAttribute("y", info.cy - 2200);
+                rotulo.setAttribute("class", "estado-rotulo-uf");
+                rotulo.textContent = uf;
+                const numero = document.createElementNS(SVGNS, "text");
+                numero.setAttribute("x", info.cx);
+                numero.setAttribute("y", info.cy + 3200);
+                numero.setAttribute("class", "estado-rotulo-num");
+                numero.textContent = `${dado.clientes} · ${pctTexto}`;
+                grupoRotulos.appendChild(rotulo);
+                grupoRotulos.appendChild(numero);
+                interativos.push({ el: rotulo, uf: uf, dado: dado, nome: info.nome });
+                interativos.push({ el: numero, uf: uf, dado: dado, nome: info.nome });
+            });
+            svgEl.appendChild(grupoRotulos);
+
+            interativos.forEach(function (item) {
+                item.el.style.cursor = "pointer";
+                item.el.addEventListener("mouseenter", function (ev) { mostrarTooltip(ev, item.dado, item.nome); });
+                item.el.addEventListener("mousemove", function (ev) { moverTooltip(ev); });
+                item.el.addEventListener("mouseleave", function () { tooltip.style.display = "none"; });
+            });
+        });
+
+    function mostrarTooltip(ev, dado, nome) {
+        tooltip.innerHTML = `<strong>${nome}</strong><br>${dado.clientes} clientes<br>${dado.pct.toFixed(1)}% do marketshare`;
+        tooltip.style.display = "block";
+        moverTooltip(ev);
+    }
+    function moverTooltip(ev) {
+        const wrap = document.getElementById("mapa-brasil-wrap").getBoundingClientRect();
+        tooltip.style.left = (ev.clientX - wrap.left + 14) + "px";
+        tooltip.style.top = (ev.clientY - wrap.top + 10) + "px";
+    }
+})();
+</script>
+{% endblock %}

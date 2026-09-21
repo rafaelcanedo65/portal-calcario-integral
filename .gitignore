@@ -1,0 +1,11 @@
+.env
+*.db
+__pycache__/
+*.pyc
+.claude/
+cookies.txt
+
+# Dado real de clientes (PII: nome, telefone, cidade) -- nao deve viajar pelo
+# historico do git. Se um dev novo precisar dele pra testar, compartilhe o
+# arquivo separadamente (nao pelo repositorio) e rode `python -m app.crm_import_real`.
+crm_dados_reais.json

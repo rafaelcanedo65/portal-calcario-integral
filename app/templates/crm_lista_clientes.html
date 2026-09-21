@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ fase_label }}{% endblock %}
+{% block content %}
+<a class="back-btn" href="{{ voltar_url }}">&lsaquo; Voltar</a>
+<h1>{{ fase_label }}{% if uf %} — {{ uf }}{% endif %} <span style="font-family:'Work Sans'; font-size:0.9rem; color:var(--ink-soft); font-weight:400;">{{ clientes|length }} clientes</span></h1>
+
+<div class="field2" style="margin-bottom:12px; max-width:360px;">
+    <input type="text" id="busca-nome" placeholder="Buscar cliente pelo nome...">
+</div>
+
+<form method="get" class="form-inline" style="margin-bottom:6px;">
+    <label>Cidade
+        <select name="cidade" onchange="this.form.submit()">
+            <option value="">Todas</option>
+            {% for c in cidades %}
+            <option value="{{ c }}" {% if filtros.cidade == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Ordenar por
+        <select name="ordenar" onchange="this.form.submit()">
+            <option value="">Padrao (nome)</option>
+            <option value="sazonalidade" {% if filtros.ordenar == "sazonalidade" %}selected{% endif %}>Epoca de compra (quem compra agora primeiro)</option>
+            <option value="antigo" {% if filtros.ordenar == "antigo" %}selected{% endif %}>Contato mais antigo primeiro</option>
+            <option value="recente" {% if filtros.ordenar == "recente" %}selected{% endif %}>Contato mais recente primeiro</option>
+        </select>
+    </label>
+    <label style="flex-direction:row; align-items:center; gap:6px;">
+        <input type="checkbox" name="pendentes" value="1" style="width:auto;" {% if filtros.pendentes == "1" %}checked{% endif %} onchange="this.form.submit()">
+        So quem precisa de contato (14+ dias ou nunca contatado)
+    </label>
+</form>
+{% if filtros.ordenar == "sazonalidade" %}
+<p style="color:var(--ink-soft); font-size:0.85rem; margin:-4px 0 12px;">
+    Estamos em {{ mes_atual_nome }}. Quem historicamente compra agora (ou esta perto de comprar) aparece primeiro;
+    quem nao tem historico de compra registrado fica no fim, do contato mais antigo pro mais recente.
+</p>
+{% endif %}
+
+<div class="table-wrap">
+<table class="tabela" id="tabela-clientes">
+    <thead>
+        <tr>
+            <th>Cliente</th><th>Proprietario</th><th>Regiao</th><th>Ativo</th><th>Telefone</th><th>Epoca de compra</th><th>Coment.</th><th>Ult. Interacao</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in clientes %}
+        {% set dias = c.dias_desde_ultima_interacao() %}
+        {% set prioridade = c.prioridade_sazonal() %}
+        <tr class="linha-cliente" data-nome="{{ c.fazenda|lower }}" onclick="window.location='{{ ficha_base_url }}/{{ c.id }}'" style="cursor:pointer;">
+            <td>
+                {{ c.fazenda }}
+                {% if c.categoria() %}<span class="cat-badge">{{ c.categoria() }}</span>{% endif %}
+            </td>
+            <td>{{ c.proprietario or "-" }}</td>
+            <td>{{ c.cidade }}, {{ c.uf }}</td>
+            <td>{% if c.fase not in ("perdido", "nao_usara") %}<span class="ativo-dot">●</span>{% else %}-{% endif %}</td>
+            <td>{{ c.telefone or "-" }}</td>
+            <td>
+                {% if prioridade is not none and prioridade == 0 %}<span class="log-badge green">{{ c.meses_compra_texto() }}</span>
+                {% elif c.meses_compra_texto() %}{{ c.meses_compra_texto() }}
+                {% else %}<span style="color:var(--ink-soft);">sem historico</span>{% endif %}
+            </td>
+            <td>{{ c.historico|length }}</td>
+            <td>
+                {% if dias is none %}<span style="color:var(--ink-soft);">nunca</span>
+                {% elif dias <= 7 %}<span class="recencia-boa">{{ dias }}d</span>
+                {% elif dias <= 30 %}<span class="recencia-media">{{ dias }}d</span>
+                {% else %}<span class="recencia-ruim">{{ dias }}d</span>{% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">Nenhum cliente nesta fase.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<script>
+document.getElementById("busca-nome").addEventListener("input", function () {
+    const termo = this.value.trim().toLowerCase();
+    document.querySelectorAll("#tabela-clientes .linha-cliente").forEach(function (linha) {
+        linha.style.display = linha.dataset.nome.includes(termo) ? "" : "none";
+    });
+});
+</script>
+{% endblock %}

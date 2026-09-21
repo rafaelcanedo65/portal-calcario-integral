@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}Ficha do cliente{% endblock %}
+{% block content %}
+{% if not cliente %}
+<div class="erro">Cliente nao encontrado, ou fora da sua carteira.</div>
+{% else %}
+<a class="back-btn" href="{{ voltar_url }}">&lsaquo; Voltar</a>
+<h1>{{ cliente.fazenda }}</h1>
+<p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-0.8rem; margin-bottom:1rem;">
+    {{ cliente.cidade }}, {{ cliente.uf }} · Vendedor: {{ cliente.vendedor_nome or "-" }}
+    · <span class="pill {{ fase_cor[cliente.fase] }}">{{ fase_label[cliente.fase] }}</span>
+</p>
+
+{% if erro %}<div class="erro" style="margin-bottom:1rem;">{{ erro }}</div>{% endif %}
+
+<div class="tabs-bar">
+    <button type="button" id="tab-dados" class="tab-btn {{ 'active' if aba_inicial == 'dados' }}" onclick="mostrarAba('dados')">Dados do cliente</button>
+    <button type="button" id="tab-comentario" class="tab-btn {{ 'active' if aba_inicial == 'comentario' }}" onclick="mostrarAba('comentario')">Comentario</button>
+    <button type="button" id="tab-propostas" class="tab-btn {{ 'active' if aba_inicial == 'propostas' }}" onclick="mostrarAba('propostas')">Proposta</button>
+    <button type="button" id="tab-pedidos" class="tab-btn {{ 'active' if aba_inicial == 'pedidos' }}" onclick="mostrarAba('pedidos')">Historico de pedidos{% if pedidos %} ({{ pedidos|length }}){% endif %}</button>
+</div>
+
+<div id="aba-dados" class="aba {{ 'aba-ativa' if aba_inicial == 'dados' }}">
+    <div class="ficha-cliente">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="margin:0;">Dados do cliente</h2>
+                <a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/{{ cliente.id }}/editar">Editar cadastro</a>
+            </div>
+            <div class="ficha-grid">
+                <div class="field2"><label>Proprietario</label><div class="valor">{{ cliente.proprietario or "-" }}</div></div>
+                <div class="field2"><label>Telefone</label><div class="valor">{{ cliente.telefone or "-" }}</div></div>
+                <div class="field2"><label>Email</label><div class="valor">{{ cliente.email or "-" }}</div></div>
+                <div class="field2"><label>CNPJ</label><div class="valor">{{ cliente.cnpj or "-" }}</div></div>
+                <div class="field2"><label>Empresa</label><div class="valor">{{ cliente.empresa or "-" }}</div></div>
+                <div class="field2"><label>Forma de pagamento</label><div class="valor">{{ cliente.forma_pagamento or "-" }}</div></div>
+                <div class="field2"><label>Area plantada (ha)</label><div class="valor">{{ cliente.area_plantada_ha|numbr(0) if cliente.area_plantada_ha else "-" }}</div></div>
+                <div class="field2"><label>Frota propria</label><div class="valor">{{ "Sim" if cliente.frota_propria else "Nao" }}</div></div>
+                <div class="field2"><label>Categoria (calculada)</label><div class="valor">{{ cliente.categoria() or "-" }}</div></div>
+                <div class="field2"><label>Ultimo contato</label><div class="valor">{{ cliente.dias_desde_ultima_interacao() ~ " dias atras" if cliente.dias_desde_ultima_interacao() is not none else "-" }}</div></div>
+                <div class="field2"><label>Proximo retorno agendado</label><div class="valor">{{ cliente.proximo_retorno_em.strftime("%d/%m/%Y") if cliente.proximo_retorno_em else "-" }}</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-top:0; margin-bottom:1rem;">Outros contatos</h2>
+            <p style="color:var(--ink-soft); font-size:0.8rem; margin-top:-0.6rem; margin-bottom:0.8rem;">
+                Use pra registrar outros telefones da fazenda e quem atende neles — ex: o celular do
+                dono e o telefone de quem cuida de suprimentos, se forem pessoas diferentes.
+            </p>
+            {% for ca in cliente.contatos_adicionais %}
+            <div class="contato-extra-row">
+                <span><strong>{{ ca.nome }}</strong> — {{ ca.funcao }} · {{ ca.telefone }}</span>
+                <form method="post" action="/crm/cliente/{{ cliente.id }}/contato-adicional/{{ ca.id }}/excluir" style="margin:0;">
+                    <button type="submit">Remover</button>
+                </form>
+            </div>
+            {% else %}
+            <p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum contato adicional cadastrado.</p>
+            {% endfor %}
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/contato-adicional" style="margin-top:10px;">
+                <div class="ficha-grid" style="margin-bottom:8px;">
+                    <div class="field2"><label>Nome da pessoa</label><input type="text" name="nome" required></div>
+                    <div class="field2">
+                        <label>Funcao</label>
+                        <input type="text" name="funcao" list="lista-funcoes" placeholder="ex: Suprimentos" required>
+                        <datalist id="lista-funcoes">
+                            <option value="Proprietario">
+                            <option value="Suprimentos">
+                            <option value="Financeiro">
+                            <option value="Gerente">
+                            <option value="Comprador">
+                            <option value="Motorista/Logistica">
+                        </datalist>
+                    </div>
+                    <div class="field2" style="grid-column:1/3;"><label>Telefone</label><input type="text" name="telefone" placeholder="DDD + numero, ex: 86 99945-0475" required></div>
+                </div>
+                <button type="submit">Adicionar</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div id="aba-propostas" class="aba {{ 'aba-ativa' if aba_inicial == 'propostas' }}">
+    <p class="aviso-dados-exemplo" style="max-width:640px;">
+        A etapa avanca sozinha conforme voce registra uma proposta ou gera um pedido — ninguem precisa
+        mover o cliente manualmente no funil. Um pedido ja ativo nao impede uma nova proposta do mesmo
+        produto: pode ser que o cliente queira comprar mais.
+    </p>
+    <div class="ficha-grid">
+        {% for pe in produtos_estado %}
+        <div class="produto-card {{ 'livre' if pe.situacao == 'livre' else '' }}">
+            <h3>{{ pe.produto }}
+                {% if pe.situacao == "livre" %}<span class="log-badge grey">sem proposta em aberto</span>
+                {% else %}<span class="log-badge blue">proposta no {{ pe.proposta.numero }} em aberto</span>{% endif %}
+            </h3>
+
+            {% if pe.situacao == "livre" %}
+                <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/nova">
+                    <input type="hidden" name="produto" value="{{ pe.produto }}">
+                    <div class="ficha-grid" style="margin-bottom:8px;">
+                        <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_novo-{{ pe.produto }}" name="volume" oninput="atualizarTotal('novo-{{ pe.produto }}')" required></div>
+                        <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_novo-{{ pe.produto }}" name="preco" oninput="atualizarTotal('novo-{{ pe.produto }}')" required></div>
+                        <div class="field2"><label>Valor total</label><div class="valor" id="total_novo-{{ pe.produto }}">R$ 0,00</div></div>
+                        <div class="field2"><label>Pagamento</label>
+                            <select name="pagamento" required>
+                                <option value="">Selecione...</option>
+                                <option value="A vista">A vista</option>
+                                <option value="A prazo">A prazo</option>
+                            </select>
+                        </div>
+                        <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" placeholder="ex: 30 dias"></div>
+                        <div class="field2" style="grid-column:1/3;"><label>Observacoes (ex: pagamento em permuta)</label><textarea name="observacoes" rows="2"></textarea></div>
+                    </div>
+                    <button type="submit">Registrar proposta de {{ pe.produto }}</button>
+                </form>
+
+            {% else %}
+                {% set p = pe.proposta %}
+                <div class="ficha-grid" style="margin-bottom:8px;">
+                    <div class="field2"><label>Volume</label><div class="valor">{{ p.volume|numbr(1) }} t</div></div>
+                    <div class="field2"><label>Preco</label><div class="valor">R$ {{ p.preco|numbr(2) }}/t</div></div>
+                    <div class="field2"><label>Valor total</label><div class="valor">R$ {{ p.valor_total()|numbr(2) }}</div></div>
+                    <div class="field2"><label>Pagamento</label><div class="valor">{{ p.pagamento }}{{ " (" ~ p.prazo ~ ")" if p.prazo else "" }}</div></div>
+                    {% if p.observacoes %}<div class="field2" style="grid-column:1/3;"><label>Observacoes</label><div class="valor">{{ p.observacoes }}</div></div>{% endif %}
+                </div>
+                <div class="btn-row">
+                    <button type="button" class="btn-secondary" onclick="alternar('editar-proposta-{{ p.id }}')">Editar proposta</button>
+                    <a href="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/gerar-pedido"><button type="button">Gerar pedido</button></a>
+                </div>
+                <div id="editar-proposta-{{ p.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+                    <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/editar">
+                        <div class="ficha-grid" style="margin-bottom:8px;">
+                            <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_editar-{{ p.id }}" name="volume" value="{{ p.volume }}" oninput="atualizarTotal('editar-{{ p.id }}')" required></div>
+                            <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_editar-{{ p.id }}" name="preco" value="{{ p.preco }}" oninput="atualizarTotal('editar-{{ p.id }}')" required></div>
+                            <div class="field2"><label>Valor total</label><div class="valor" id="total_editar-{{ p.id }}">R$ {{ p.valor_total()|numbr(2) }}</div></div>
+                            <div class="field2"><label>Pagamento</label>
+                                <select name="pagamento" required>
+                                    <option value="A vista" {% if p.pagamento == "A vista" %}selected{% endif %}>A vista</option>
+                                    <option value="A prazo" {% if p.pagamento == "A prazo" %}selected{% endif %}>A prazo</option>
+                                </select>
+                            </div>
+                            <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" value="{{ p.prazo or '' }}"></div>
+                            <div class="field2" style="grid-column:1/3;"><label>Observacoes</label><textarea name="observacoes" rows="2">{{ p.observacoes or '' }}</textarea></div>
+                        </div>
+                        <button type="submit">Atualizar proposta</button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div id="aba-pedidos" class="aba {{ 'aba-ativa' if aba_inicial == 'pedidos' }}">
+    {% for pd in pedidos %}
+    <div class="produto-card">
+        <h3>{{ pd.produto }} — pedido no {{ pd.numero }}
+            {% if pd.status == "aberto" %}<span class="log-badge green">ativo</span>
+            {% else %}<span class="log-badge red">cancelado</span>{% endif %}
+        </h3>
+        <div class="ficha-grid" style="margin-bottom:8px;">
+            <div class="field2"><label>Volume contratado</label><div class="valor">{{ pd.volume|numbr(1) }} t</div></div>
+            <div class="field2"><label>Preco</label><div class="valor">R$ {{ pd.preco|numbr(2) }}/t</div></div>
+            <div class="field2"><label>Valor total</label><div class="valor">R$ {{ pd.valor_total()|numbr(2) }}</div></div>
+            <div class="field2"><label>Pagamento</label><div class="valor">{{ pd.pagamento }}{{ " (" ~ pd.prazo ~ ")" if pd.prazo else "" }}</div></div>
+            <div class="field2"><label>Retirado ate agora</label>
+                <div class="valor">{{ (pd.volume_retirado|numbr(1) ~ " t") if pd.volume_retirado is not none else "Ainda nao sincronizado (vira do NetSuite)" }}</div>
+            </div>
+            <div class="field2"><label>Faturado por</label><div class="valor">{{ pd.subsidiaria_nome or "-" }}</div></div>
+            <div class="field2" style="grid-column:1/3;"><label>Faturamento</label><div class="valor">{{ pd.faturamento_nome }} ({{ pd.faturamento_documento }})</div></div>
+            {% if pd.status == "cancelado" %}<div class="field2" style="grid-column:1/3;"><label>Motivo do cancelamento</label><div class="valor">{{ pd.motivo_cancelamento }}</div></div>{% endif %}
+        </div>
+
+        {% if pd.status == "aberto" %}
+        <div class="btn-row">
+            <button type="button" class="btn-gold" onclick="alternar('renegociar-{{ pd.id }}')">Renegociar pedido</button>
+            <button type="button" class="btn-red" onclick="alternar('cancelar-{{ pd.id }}')">Cancelar pedido</button>
+        </div>
+        <div id="renegociar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/renegociar">
+                <div class="ficha-grid" style="margin-bottom:8px;">
+                    <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_reneg-{{ pd.id }}" name="preco" value="{{ pd.preco }}" oninput="atualizarTotal('reneg-{{ pd.id }}')" required></div>
+                    <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_reneg-{{ pd.id }}" name="volume" value="{{ pd.volume }}" oninput="atualizarTotal('reneg-{{ pd.id }}')" required></div>
+                    <div class="field2"><label>Valor total</label><div class="valor" id="total_reneg-{{ pd.id }}">R$ {{ pd.valor_total()|numbr(2) }}</div></div>
+                    <div class="field2"><label>Pagamento</label>
+                        <select name="pagamento" required>
+                            <option value="A vista" {% if pd.pagamento == "A vista" %}selected{% endif %}>A vista</option>
+                            <option value="A prazo" {% if pd.pagamento == "A prazo" %}selected{% endif %}>A prazo</option>
+                        </select>
+                    </div>
+                    <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" value="{{ pd.prazo or '' }}"></div>
+                </div>
+                <button type="submit" class="btn-gold">Confirmar renegociacao</button>
+            </form>
+        </div>
+        <div id="cancelar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/cancelar">
+                <div class="field2" style="margin-bottom:8px;">
+                    <label>Motivo do cancelamento</label>
+                    <input type="text" name="motivo" required>
+                </div>
+                <p style="font-size:0.78rem; color:var(--red); margin:0 0 8px;">
+                    Essa acao nao pode ser desfeita — sera preciso fazer uma proposta nova para uma nova venda.
+                </p>
+                <button type="submit" class="btn-red">Sim, cancelar definitivamente</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum pedido gerado ainda para este cliente.</p>
+    {% endfor %}
+</div>
+
+<div id="aba-comentario" class="aba {{ 'aba-ativa' if aba_inicial == 'comentario' }}">
+    <div class="ficha-cliente">
+        <div class="card">
+            <h2 style="margin-top:0; margin-bottom:1rem;">Registrar contato</h2>
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
+                <div class="field2" style="margin-bottom:10px;">
+                    <label>O que aconteceu?</label>
+                    <select name="resultado">
+                        {% for valor, label in resultados.items() %}
+                        <option value="{{ valor }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field2" style="margin-bottom:10px;">
+                    <label>Teor da conversa</label>
+                    <textarea name="texto" rows="3" placeholder="O que foi conversado com o cliente..." required></textarea>
+                </div>
+                <div class="field2" style="margin-bottom:10px;">
+                    <label>Agendar novo contato para (opcional — entra na agenda)</label>
+                    <input type="date" name="proximo_retorno">
+                </div>
+                <button type="submit">Salvar contato</button>
+            </form>
+
+            <div style="margin-top:1.3rem; padding-top:1rem; border-top:1px dashed var(--line);">
+                <h3 style="font-size:0.9rem; margin:0 0 8px;">Finalizar cliente — nao vai seguir na negociacao</h3>
+                <div class="btn-row" style="margin-top:0;">
+                    <button type="button" class="btn-secondary" onclick="alternar('finalizar-nao-usara')">Nao usara</button>
+                    <button type="button" class="btn-red" onclick="alternar('finalizar-perdido')">Perdido</button>
+                </div>
+                <div id="finalizar-nao-usara" style="display:none; margin-top:10px;">
+                    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
+                        <input type="hidden" name="resultado" value="sem_interesse">
+                        <div class="field2" style="margin-bottom:8px;"><label>Motivo</label><textarea name="texto" rows="2" required></textarea></div>
+                        <button type="submit" class="btn-secondary">Confirmar: nao usara</button>
+                    </form>
+                </div>
+                <div id="finalizar-perdido" style="display:none; margin-top:10px;">
+                    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
+                        <input type="hidden" name="resultado" value="perdido">
+                        <div class="field2" style="margin-bottom:8px;"><label>Motivo</label><textarea name="texto" rows="2" required></textarea></div>
+                        <button type="submit" class="btn-red">Confirmar: perdido</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-top:0; margin-bottom:1rem;">Historico</h2>
+            <ul class="timeline">
+                {% for h in historico %}
+                {% if h.tipo in ("proposta", "pedido", "pedido_cancelado") and h.numero %}
+                <li class="tl-item {{ 'tl-proposta' if h.tipo == 'proposta' else ('tl-pedido-cancelado' if h.tipo == 'pedido_cancelado' else 'tl-pedido') }}">
+                    <div style="width:100%;">
+                        <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }}</span>
+                        <div class="tl-registro-head">
+                            {% if h.tipo == "proposta" %}<span class="log-badge blue">Proposta no {{ h.numero }}</span>
+                            {% elif h.tipo == "pedido" %}<span class="log-badge green">Venda realizada — pedido no {{ h.numero }}</span>
+                            {% else %}<span class="log-badge red">Pedido cancelado — no {{ h.numero }}</span>{% endif %}
+                            <strong>{{ h.produto }}</strong>
+                        </div>
+                        <div class="tl-registro-grid">
+                            <span>Volume: {{ h.volume|numbr(1) }} t</span>
+                            <span>Preco: R$ {{ h.preco|numbr(2) }}/t</span>
+                            <span>Valor total: R$ {{ (h.volume * h.preco)|numbr(2) }}</span>
+                            <span>Pagamento: {{ h.pagamento or "-" }}</span>
+                        </div>
+                        <div class="tl-text" style="margin-top:6px;">{{ h.texto }}</div>
+                    </div>
+                </li>
+                {% else %}
+                <li class="tl-item {% if h.tipo == 'mudanca_fase' %}tl-fase{% elif h.tipo == 'agenda' %}tl-agenda{% endif %}">
+                    <div>
+                        <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }}</span>
+                        <div class="tl-text">{{ h.texto }}</div>
+                    </div>
+                </li>
+                {% endif %}
+                {% else %}
+                <li style="color:var(--ink-soft); font-size:0.85rem;">Sem historico ainda.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+function alternar(id){
+    var el = document.getElementById(id);
+    el.style.display = (el.style.display === "none" || !el.style.display) ? "block" : "none";
+}
+function mostrarAba(nome){
+    document.querySelectorAll(".aba").forEach(function (el) { el.classList.remove("aba-ativa"); });
+    document.querySelectorAll(".tab-btn").forEach(function (el) { el.classList.remove("active"); });
+    document.getElementById("aba-" + nome).classList.add("aba-ativa");
+    document.getElementById("tab-" + nome).classList.add("active");
+    if (window.history && window.history.replaceState) {
+        var url = new URL(window.location);
+        url.searchParams.set("aba", nome);
+        window.history.replaceState({}, "", url);
+    }
+}
+function fmtBRL(v){
+    if (!isFinite(v)) v = 0;
+    return v.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function atualizarTotal(prefixo){
+    var volEl = document.getElementById("vol_" + prefixo);
+    var precoEl = document.getElementById("preco_" + prefixo);
+    var totalEl = document.getElementById("total_" + prefixo);
+    if (!volEl || !precoEl || !totalEl) return;
+    var vol = parseFloat(volEl.value) || 0;
+    var preco = parseFloat(precoEl.value) || 0;
+    totalEl.textContent = "R$ " + fmtBRL(vol * preco);
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Log de atividades{% endblock %}
+{% block content %}
+<a class="back-btn" href="/crm">&lsaquo; Voltar</a>
+<h1>Log de atividades dos vendedores</h1>
+
+<form method="get" action="/crm/log" class="form-inline">
+    <label>Vendedor
+        <select name="vendedor">
+            <option value="">Todos</option>
+            {% for v in vendedores %}
+            <option value="{{ v }}" {% if filtros.vendedor == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Data de<input type="date" name="data_de" value="{{ filtros.data_de }}"></label>
+    <label>ate<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
+    <button type="submit">Filtrar</button>
+</form>
+
+<p style="color:var(--ink-soft); font-size:0.85rem; margin:1rem 0;">
+    {{ atividades|length }} atividade{{ "s" if atividades|length != 1 else "" }} no periodo.
+    {% if atingiu_limite %}Mostrando so as 500 mais recentes — reduza o periodo ou filtre por vendedor pra ver tudo.{% endif %}
+</p>
+
+<div class="table-wrap">
+<table class="tabela">
+    <thead>
+        <tr><th>Data/Hora</th><th>Vendedor</th><th>Cliente</th><th>Acao</th><th>Descricao</th></tr>
+    </thead>
+    <tbody>
+        {% for a in atividades %}
+        <tr>
+            <td style="white-space:nowrap;">{{ a.data.strftime("%d/%m/%Y %H:%M") }}</td>
+            <td>{{ a.vendedor }}</td>
+            <td><a href="/crm/cliente/{{ a.cliente_id }}">{{ a.cliente }}</a></td>
+            <td><span class="log-badge {{ a.tipo_cor }}">{{ a.tipo_label }}</span></td>
+            <td>{{ a.texto }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">Nenhuma atividade registrada nesse periodo.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

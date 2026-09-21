@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}CRM {{ uf }}{% endblock %}
+{% block content %}
+<div class="breadcrumb">
+    <a href="/crm">Inicio</a><span class="sep">&rsaquo;</span><span>{{ uf }}</span>
+</div>
+<h1>Carteira — {{ uf }} <span style="font-family:'Work Sans'; font-size:0.9rem; color:var(--ink-soft); font-weight:400;">{{ total }} clientes</span></h1>
+
+<div class="stats-grid">
+    {% for f in fases %}
+    <a class="stat-card {{ f.cor }}" href="{{ base_url }}/fase/{{ f.chave }}">
+        <span class="num">{{ f.qtd }}</span>
+        <div class="label">{{ f.label }}</div>
+        <div class="pct">{{ "%.1f"|format(f.pct) }}%</div>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

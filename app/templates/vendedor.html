@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Carteira de Clientes{% endblock %}
+{% block content %}
+<h1>{% if user.role == "vendedor" %}Minha carteira de clientes{% else %}Todos os clientes (visao admin){% endif %}</h1>
+
+<table class="tabela">
+    <thead>
+        <tr><th>Cliente</th><th>Pedidos</th><th>Saldo em aberto (t)</th><th>Faturado (t)</th></tr>
+    </thead>
+    <tbody>
+        {% for cliente, info in clientes.items() %}
+        <tr>
+            <td>{{ cliente }}</td>
+            <td>{{ info.pedidos }}</td>
+            <td>{{ info.saldo_aberto|numbr }}</td>
+            <td>{{ info.faturado|numbr }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Nenhum pedido encontrado para esta carteira.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Pedidos</h2>
+<table class="tabela">
+    <thead>
+        <tr><th>Pedido</th><th>Cliente</th><th>Data</th><th>Status</th><th>Saldo (t)</th><th>Valor Unit.</th><th>Prazo Retirada</th><th>Contato</th></tr>
+    </thead>
+    <tbody>
+        {% for p in pedidos %}
+        <tr>
+            <td>{{ p.numero_pedido }}</td>
+            <td>{{ p.cliente }}</td>
+            <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}</td>
+            <td>{{ p.status }}</td>
+            <td>{{ p.saldo|numbr }}</td>
+            <td>{{ p.valor_unitario|numbr }}</td>
+            <td>{{ p.data_limite_retirada.strftime("%d/%m/%Y") if p.data_limite_retirada else "-" }}</td>
+            <td>
+                <a class="back-btn" style="margin-bottom:0;" href="/pedidos/{{ p.id }}/conversa">
+                    Conversa
+                    {% if mensagens_nao_lidas.get(p.id) %}<span class="menu-badge" style="position:static; display:inline-flex; margin-left:4px;">{{ mensagens_nao_lidas[p.id] }}</span>{% endif %}
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

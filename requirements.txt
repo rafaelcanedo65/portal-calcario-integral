@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+jinja2
+python-multipart
+itsdangerous
+bcrypt
+openpyxl
+python-dotenv
+requests
+requests-oauthlib
