@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Portaria{% endblock %}
+{% block topo_titulo %}<span class="topo-saudacao"><b>{{ saudacao }}</b> · {{ data_extenso }}</span>{% endblock %}
+{% block content %}
+{# Portaria (Rafael, 2026-10-05; regra em portaria.py): so consulta. Busca o cliente ou o pedido e responde em verde
+   "Pode carregar", vermelho "Nao carregar" ou ambar "Conferir", com o motivo. Sem busca: liberados recentes e
+   quem esta esperando o pagamento. #}
+{% macro cartao(c) %}
+<article class="po-cartao po-{{ c.sit }}">
+    <div class="po-veredito"><i data-lucide="{{ {'sim': 'circle-check', 'nao': 'octagon-x', 'conferir': 'triangle-alert'}[c.sit] }}"></i>{{ c.titulo }}</div>
+    <div class="po-corpo">
+        <b>{{ c.codigo }} · {{ c.cliente|nome_cliente }}</b>
+        <span class="po-motivo">{{ c.motivo }}</span>
+        <span class="po-detalhe">{{ c.origem }}{{ " · " ~ (c.produto|produto_legivel) if c.produto }} · saldo {{ c.saldo }}{{ " · " ~ c.cidade if c.cidade }}{% if c.prazo %} · retirar até {{ c.prazo.strftime("%d/%m/%Y") }}{% endif %}</span>
+    </div>
+</article>
+{% endmacro %}
+
+<form method="get" action="/portaria" class="po-busca">
+    <i data-lucide="search"></i>
+    <input type="search" name="q" value="{{ q }}" placeholder="Cliente, pedido do portal (PV-0039) ou número do NetSuite" autofocus autocomplete="off">
+    <button type="submit" class="btn btn-primario">Consultar</button>
+</form>
+
+{% if resultados is not none %}
+<h2 class="secao-titulo">Resultado para "{{ q }}" <span class="ai-dica">{{ resultados|length }} pedido{{ "s" if resultados|length != 1 }} em aberto</span></h2>
+{% if resultados %}
+<div class="po-lista">{% for c in resultados %}{{ cartao(c) }}{% endfor %}</div>
+{% else %}
+<p class="po-vazio">Nenhum pedido em aberto encontrado. Confira o nome do cliente ou o número do pedido; na dúvida, fale com a Logística.</p>
+{% endif %}
+<p class="nota"><a href="/portaria">Limpar a busca</a></p>
+{% else %}
+<div class="po-colunas">
+    <section>
+        <h2 class="secao-titulo">Pode carregar <span class="ai-dica">pagamento à vista confirmado nos últimos dias</span></h2>
+        {% if liberados %}<div class="po-lista">{% for c in liberados %}{{ cartao(c) }}{% endfor %}</div>
+        {% else %}<p class="po-vazio">Nenhum pagamento à vista confirmado nos últimos dias.</p>{% endif %}
+    </section>
+    <section>
+        <h2 class="secao-titulo">Não carregar <span class="ai-dica">à vista esperando o pagamento ({{ aguardando|length }})</span></h2>
+        {% if aguardando %}<div class="po-lista">{% for c in aguardando[:8] %}{{ cartao(c) }}{% endfor %}</div>
+        {% if aguardando|length > 8 %}<p class="nota">e mais {{ aguardando|length - 8 }}. Use a busca para achar um pedido.</p>{% endif %}
+        {% else %}<p class="po-vazio">Nenhum pedido à vista esperando pagamento.</p>{% endif %}
+    </section>
+</div>
+{% endif %}
+<p class="nota po-nota">Pedidos que só existem no NetSuite seguem a aprovação do NetSuite; o pagamento desses é conferido lá.</p>
+{% endblock %}

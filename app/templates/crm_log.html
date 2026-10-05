@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Log de atividades{% endblock %}
 {% block content %}
-<a class="back-btn" href="/crm">&lsaquo; Voltar</a>
-<h1>Log de atividades dos vendedores</h1>
+<div class="pagina-cab">
+    <div>
+        <h1>Log de atividades</h1>
+        <p class="pagina-sub">
+            {{ atividades|length }} atividade{{ "s" if atividades|length != 1 else "" }} dos vendedores no período.
+            {% if atingiu_limite %}Mostrando só as 500 mais recentes: reduza o período ou filtre por vendedor para ver tudo.{% endif %}
+        </p>
+    </div>
+</div>
 
-<form method="get" action="/crm/log" class="form-inline">
+<form method="get" action="/crm/log" class="form-inline" style="margin-bottom:16px;">
     <label>Vendedor
         <select name="vendedor">
             <option value="">Todos</option>
@@ -13,20 +20,15 @@
             {% endfor %}
         </select>
     </label>
-    <label>Data de<input type="date" name="data_de" value="{{ filtros.data_de }}"></label>
-    <label>ate<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
+    <label>De<input type="date" name="data_de" value="{{ filtros.data_de }}"></label>
+    <label>Até<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
     <button type="submit">Filtrar</button>
 </form>
-
-<p style="color:var(--ink-soft); font-size:0.85rem; margin:1rem 0;">
-    {{ atividades|length }} atividade{{ "s" if atividades|length != 1 else "" }} no periodo.
-    {% if atingiu_limite %}Mostrando so as 500 mais recentes — reduza o periodo ou filtre por vendedor pra ver tudo.{% endif %}
-</p>
 
 <div class="table-wrap">
 <table class="tabela">
     <thead>
-        <tr><th>Data/Hora</th><th>Vendedor</th><th>Cliente</th><th>Acao</th><th>Descricao</th></tr>
+        <tr><th>Data e hora</th><th>Vendedor</th><th>Cliente</th><th>Ação</th><th>Descrição</th></tr>
     </thead>
     <tbody>
         {% for a in atividades %}
@@ -38,7 +40,7 @@
             <td>{{ a.texto }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="5">Nenhuma atividade registrada nesse periodo.</td></tr>
+        <tr><td colspan="5">Nenhuma atividade registrada nesse período.</td></tr>
         {% endfor %}
     </tbody>
 </table>

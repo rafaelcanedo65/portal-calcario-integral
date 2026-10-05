@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Fila de trabalho{% endblock %}
+{% block content %}
+{% from "_fila_item.html" import fila_item %}
+<div class="pagina-cab">
+    <div>
+        <h1>Fila de trabalho</h1>
+        <p class="pagina-sub">{{ fila|length }} cliente{{ "s" if fila|length != 1 }} · quem precisa de você primeiro</p>
+    </div>
+</div>
+
+{% if fila %}
+<div class="fila-lista fila-lista-completa">
+    {% for item in fila %}{{ fila_item(item) }}{% endfor %}
+</div>
+{% else %}
+<p class="fila-vazia">Nenhuma pendência urgente agora. Sua carteira está em dia.</p>
+{% endif %}
+{% endblock %}

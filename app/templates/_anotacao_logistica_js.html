@@ -1,0 +1,79 @@
+<script>
+// Painel de anotacao: abre embaixo da linha do pedido, sem sair da lista
+function abrirAnotacao(id, voltar) {
+    var aberto = document.getElementById("linha-anotacao-" + id);
+    if (aberto) { aberto.remove(); return; }
+    if (!document.getElementById("row-" + id)) return;
+    fetch("/logistica/pedido/" + id + "/anotacao?voltar=" + encodeURIComponent(voltar))
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+            var linha = document.getElementById("row-" + id);
+            var alvo;
+            if (linha.tagName === "TR") {
+                alvo = document.createElement("tr");
+                var td = document.createElement("td");
+                td.colSpan = linha.cells.length;
+                td.innerHTML = html;
+                alvo.appendChild(td);
+            } else {
+                alvo = document.createElement("div");
+                alvo.innerHTML = html;
+            }
+            alvo.className = "linha-anotacao";
+            alvo.id = "linha-anotacao-" + id;
+            linha.after(alvo);
+            // Tabela mais larga que a tela: o painel fica do tamanho da parte visivel
+            var caixa = linha.closest(".table-wrap");
+            if (caixa) {
+                var painel = alvo.querySelector(".anotacao");
+                painel.style.maxWidth = caixa.clientWidth + "px";
+                painel.style.position = "sticky";
+                painel.style.left = "0";
+            }
+            if (window.lucide) lucide.createIcons();
+            prepararLocal(alvo);
+            levarAte(alvo.querySelector(".anotacao"), {bloco: "nearest"});
+        });
+}
+// Depois de salvar, a pagina volta com ?abrir=<id>: a ficha do pedido abre de novo
+(function () {
+    var params = new URLSearchParams(location.search);
+    var id = params.get("abrir");
+    if (!id) return;
+    params.delete("abrir");
+    history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "") + location.hash);
+    var linha = document.getElementById("row-" + id);
+    if (!linha) return;
+    // Na fila, o pedido pode estar depois dos 20 primeiros do grupo ("Mostrar os outros")
+    var escondido = linha.closest(".fila-log-mais[hidden]");
+    if (escondido) {
+        escondido.hidden = false;
+        var botao = escondido.nextElementSibling;
+        if (botao && botao.classList.contains("fila-ver-mais")) botao.remove();
+    }
+    abrirAnotacao(id, location.pathname);
+})();
+// Formulario do local de entrega: a lista de cidades acompanha o estado escolhido
+var _municipios = null;
+function prepararLocal(raiz) {
+    raiz.querySelectorAll(".local-uf").forEach(function (sel) {
+        var lista = document.getElementById(sel.dataset.alvo);
+        function encher() {
+            (_municipios ? Promise.resolve(_municipios) : fetch("/static/municipios_coordenadas.json").then(function (r) { return r.json(); }))
+                .then(function (dados) {
+                    _municipios = dados;
+                    lista.innerHTML = "";
+                    Object.keys(dados.municipios[sel.value] || {}).sort().forEach(function (nome) {
+                        var o = document.createElement("option"); o.value = nome; lista.appendChild(o);
+                    });
+                });
+        }
+        sel.addEventListener("change", encher);
+        encher();
+    });
+}
+function fecharAnotacao(id) {
+    var aberto = document.getElementById("linha-anotacao-" + id);
+    if (aberto) aberto.remove();
+}
+</script>

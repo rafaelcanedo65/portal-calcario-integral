@@ -101,6 +101,13 @@ def importar(caminho_xlsx: str):
                          nome_completo="Logistica", role="logistica"))
             criados.append(("logistica", senha, "logistica"))
 
+        # Confere comprovante de pedido a vista e libera o carregamento (2026-10-02)
+        if not db.query(User).filter_by(username="financeiro").first():
+            senha = "troque-esta-senha"
+            db.add(User(username="financeiro", password_hash=hash_password(senha),
+                         nome_completo="Financeiro", role="financeiro"))
+            criados.append(("financeiro", senha, "financeiro"))
+
         for nome_vendedor in sorted(vendedores_encontrados):
             username = slugify(nome_vendedor)
             if db.query(User).filter_by(username=username).first():

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Fila de atualização de cadastro{% endblock %}
+{% block content %}
+{% from "_fila_item.html" import fila_item %}
+<div class="pagina-cab">
+    <div>
+        <h1>Fila de atualização de cadastro</h1>
+        <p class="pagina-sub">{{ itens|length }} cliente{{ "s" if itens|length != 1 }} · área plantada e telefone completos garantem o market share certo</p>
+    </div>
+</div>
+
+{% if itens %}
+<div class="fila-lista fila-lista-completa">
+    {% for item in itens %}{{ fila_item(item) }}{% endfor %}
+</div>
+{% else %}
+<p class="fila-vazia">Todos os cadastros estão completos.</p>
+{% endif %}
+{% endblock %}

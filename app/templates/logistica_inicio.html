@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_inicio.html" import saudacao_topo, saudacao_celular, painel_tarefas %}
+{% block title %}Início{% endblock %}
+{% block topo_titulo %}{{ saudacao_topo(saudacao, data_extenso, tarefas|length + (1 if urgente else 0), urgente) }}{% endblock %}
+{% block content %}
+{# Inicio da Logistica (Rafael, 2026-10-04): mesma logica do Inicio do admin. Prioridade maxima = pedido a vista com
+   pagamento confirmado esperando o caminhao. Tarefas = os niveis da fila, na ordem da pagina Regras. Logica em inicio.py. #}
+<div class="ai">
+{{ saudacao_celular(saudacao, data_extenso) }}
+{{ painel_tarefas(urgente, tarefas, vazio="Fila da logística em dia.",
+                  rodape=("e mais " ~ mais_na_fila ~ " pedidos em outros níveis da fila") if mais_na_fila else None) }}
+
+<div class="ai-topo3 ai-topo2">
+    <section class="ai-cartao" aria-label="Fila da logística">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Fila <span class="ai-dica">{{ ind.na_fila }} de {{ ind.em_aberto }} pedidos precisam da equipe</span></h2>
+            <a class="ai-link" href="/logistica/fila">Abrir fila<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/logistica/fila#nivel-vencido" title="Pedidos vencidos ou com prazo apertado">
+                <span>Prazo crítico</span><b class="{{ 'ai-alerta' if ind.por_nivel.vencido or ind.por_nivel.apertado }}">{{ ind.por_nivel.vencido + ind.por_nivel.apertado }}</b>
+                <small>{{ ind.por_nivel.vencido }} venc. · {{ ind.por_nivel.apertado }} apert.</small></a>
+            <a class="ai-num" href="/logistica/fila" title="Carga necessária por dia para cumprir os prazos (só dos pedidos com prazo)">
+                <span>Carga por dia</span><b>{{ ind.carga_dia|numbr(0) }} t</b><small>para os prazos</small></a>
+            <a class="ai-num" href="/logistica" title="Sem retirada, anotação nem conversa há {{ dias_sem_acao }} dias">
+                <span>Sem ação</span><b class="{{ 'ai-atencao' if ind.sem_acao_30 }}">{{ ind.sem_acao_30 }}</b><small>há {{ dias_sem_acao }}+ dias</small></a>
+            <span class="ai-num" title="Pedidos à vista do portal sem pagamento confirmado: o carregamento está travado">
+                <span>Não carregar</span><b>{{ n_aguardando }}</b><small>sem pagamento</small></span>
+        </div>
+    </section>
+
+    <section class="ai-cartao" aria-label="Planilha e região">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Entregas <span class="ai-dica">safra {{ vol.safra }} · planilha do NetSuite</span></h2>
+            <a class="ai-link" href="/logistica/regiao">Por região<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/relatorios?r=retiradas" title="Tudo que já foi entregue dos pedidos da safra (desde {{ vol.desde.strftime('%d/%m/%Y') }})">
+                <span>Expedido</span><b>{{ vol.expedido|numbr(0) }} t</b>
+                <small class="ai-progresso">{% if vol.pct is not none %}<span class="ai-barra" title="{{ vol.pct }}% do total a entregar (expedido + falta entregar) já saiu"><span style="width: {{ vol.pct }}%"></span></span>{{ vol.pct }}%{% endif %}</small></a>
+            <a class="ai-num" href="/logistica" title="Saldo dos pedidos em aberto (saldo de pedido finalizado não entra)">
+                <span>Falta entregar</span><b>{{ vol.falta|numbr(0) }} t</b><small>{{ vol.abertos }} pedidos</small></a>
+            <a class="ai-num" href="/logistica/regiao" title="Caminhão indo para uma cidade: o que carregar e para quem oferecer">
+                <span>Por região</span><b><i data-lucide="truck"></i></b><small>frete de retorno</small></a>
+            <span class="ai-num" title="{{ 'Importada ' ~ ultima_planilha.importada_em.strftime('%d/%m %H:%M') ~ ' (UTC)' if ultima_planilha else '' }}">
+                <span>Planilha</span><b>{{ ha(ultima_planilha.importada_em) if ultima_planilha else "—" }}</b>
+                <small>{{ ultima_planilha.linhas ~ " linhas" if ultima_planilha else "sem importação" }}</small></span>
+        </div>
+    </section>
+</div>
+
+<section class="ai-cartao" aria-label="Comece por aqui">
+    <div class="ai-cartao-cab"><h2 class="ai-titulo">Comece por aqui</h2><span class="ai-dica">os primeiros da fila</span></div>
+    {% if primeiros %}
+    <div class="ai-linhas" style="--cols: 150px minmax(0, 1.5fr) minmax(0, 1fr) 80px minmax(0, 2fr);">
+        {% for p, n in primeiros %}
+        <a class="ai-linha" href="/logistica?abrir={{ p.id }}#row-{{ p.id }}">
+            <span class="reg-status cor-{{ n.cor }}">{{ n.rotulo }}</span>
+            <b>{{ p.cliente|nome_cliente }}</b>
+            <span class="ai-mudo">{{ (p.cidade ~ "/" ~ p.uf) if p.cidade else (p.uf or "") }}</span>
+            <span class="ai-direita">{{ p.saldo|numbr(0) }} t</span>
+            <span class="ai-mudo">{{ n.motivo }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}<p class="ai-mudo">Fila vazia.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

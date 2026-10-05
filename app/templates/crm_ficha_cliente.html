@@ -2,47 +2,207 @@
 {% block title %}Ficha do cliente{% endblock %}
 {% block content %}
 {% if not cliente %}
-<div class="erro">Cliente nao encontrado, ou fora da sua carteira.</div>
+<div class="erro">Cliente não encontrado, ou fora da sua carteira.</div>
 {% else %}
-<a class="back-btn" href="{{ voltar_url }}">&lsaquo; Voltar</a>
-<h1>{{ cliente.fazenda }}</h1>
-<p style="color:var(--ink-soft); font-size:0.85rem; margin-top:-0.8rem; margin-bottom:1rem;">
-    {{ cliente.cidade }}, {{ cliente.uf }} · Vendedor: {{ cliente.vendedor_nome or "-" }}
-    · <span class="pill {{ fase_cor[cliente.fase] }}">{{ fase_label[cliente.fase] }}</span>
-</p>
+{% set q_via = ('?via=' ~ via) if via else '' %}
+{# Cabecalho da ficha (design system Integral): quem e o cliente + em que
+   pe esta, sem precisar abrir aba nenhuma. #}
+<section class="ficha-topo">
+    <div class="ficha-identidade">
+        <span class="avatar avatar-grande">{{ iniciais_cliente(cliente.fazenda) }}</span>
+        <div class="ficha-identidade-texto">
+            <h1>{{ cliente.fazenda }}</h1>
+            <div class="ficha-meta">
+                <span><i data-lucide="map-pin"></i>{% if cliente.cidade %}{{ cliente.cidade }}{{ " (" ~ cliente.localidade ~ ")" if cliente.localidade }}, {{ cliente.uf }}{% else %}Cidade não informada ({{ cliente.uf }}){% endif %}
+                    {%- set ponto_fazenda = ler_coordenadas(cliente.coordenadas) if cliente.coordenadas %}
+                    {%- if ponto_fazenda or cliente.cidade %} · <a href="#" onclick="abrirRota('cliente={{ cliente.id }}'); return false;"
+                        title="Rota de estrada das nossas plantas (São Geraldo do Araguaia e Grajaú)">{{ "Rota até a fazenda" if ponto_fazenda else "Rota até a cidade" }}</a>{% endif %}</span>
+                <span><i data-lucide="user"></i>{{ cliente.vendedor_nome or "Sem vendedor" }}</span>
+                {% if cliente.telefone and cliente.telefone != "—" %}<span><i data-lucide="phone"></i>{{ cliente.telefone }}</span>{% endif %}
+            </div>
+            <div class="ficha-chips">
+                <span class="log-badge {{ fase_cor[cliente.fase] }}">{{ fase_label[cliente.fase] }}</span>
+                {% if cliente.temperatura %}
+                <span class="log-badge chip-icone {{ 'red' if cliente.temperatura == 'quente' else 'gold' if cliente.temperatura == 'morno' else 'blue' }}">
+                    <i data-lucide="{{ 'flame' if cliente.temperatura == 'quente' else 'sun' if cliente.temperatura == 'morno' else 'snowflake' }}"></i>{{ temperaturas[cliente.temperatura] }}
+                </span>
+                {% endif %}
+                {% if cliente.e_intermediario() %}<span class="log-badge clay">{{ cliente.tipo_cliente() }}</span>{% endif %}
+            </div>
+        </div>
+    </div>
+    {% if cliente.fase not in ("perdido", "nao_usara", "realizado") and not acesso_limitado %}
+    <div class="finalizar-topo">
+        <span class="finalizar-topo-label">Encerrar cliente:</span>
+        <button type="button" class="finalizar-topo-btn" onclick="alternar('finalizar-nao-usara', this)">Não usará</button>
+        <button type="button" class="finalizar-topo-btn finalizar-topo-btn-perigo" onclick="alternar('finalizar-perdido', this)">Perdido</button>
+    </div>
+    {% endif %}
+</section>
 
-{% if erro %}<div class="erro" style="margin-bottom:1rem;">{{ erro }}</div>{% endif %}
+{# Resumo: o que o vendedor precisa antes de ligar. Informacao de apoio, em faixa
+   sem quadro e menor que o resto (Rafael, 2026-10-02, mesmo principio da tela
+   inicial). Dado que falta aparece como falta (nunca "0" ou "agora"). #}
+{% set dias_contato = dias_ultimo_contato %}
+{% set pedidos_abertos = pedidos|selectattr("status", "equalto", "aberto")|list %}
+<div class="ficha-resumo">
+    <div class="resumo-item">
+        <span class="resumo-rotulo">Último contato</span>
+        <strong>{% if dias_contato is none %}Sem registro{% elif dias_contato == 0 %}Hoje{% elif dias_contato == 1 %}Há 1 dia{% else %}Há {{ dias_contato }} dias{% endif %}</strong>
+        <span class="resumo-sub">{% if cliente.proximo_retorno_em %}Retorno em {{ cliente.proximo_retorno_em.strftime("%d/%m/%Y") }}{% else %}Nenhum retorno agendado{% endif %}</span>
+    </div>
+    <div class="resumo-item">
+        <span class="resumo-rotulo">Área plantada</span>
+        {% if cliente.area_plantada_ha %}
+        <strong>{{ cliente.area_plantada_ha|numbr(0) }} ha</strong>
+        <span class="resumo-sub">{% if cliente.categoria() %}Categoria {{ cliente.categoria() }}{% else %}&nbsp;{% endif %}</span>
+        {% else %}
+        <strong class="resumo-falta">Não informada</strong>
+        <span class="resumo-sub">{% if not acesso_limitado %}<a href="/crm/cliente/{{ cliente.id }}/editar{{ q_via }}">Completar cadastro</a>{% else %}Base do market share{% endif %}</span>
+        {% endif %}
+    </div>
+    <div class="resumo-item">
+        <span class="resumo-rotulo">Época de compra</span>
+        {# Mesma fonte da regra de epoca de compra da fila (meses_compra_historico):
+           compras da planilha + recebimentos via parceiro. Pedido feito no
+           portal AINDA NAO conta -- decisao pendente com o Rafael. #}
+        {% if cliente.meses_compra_texto() %}
+        <strong>{{ cliente.meses_compra_texto() }}</strong>
+        <span class="resumo-sub">pelas compras registradas</span>
+        {% else %}
+        <strong class="resumo-falta">Sem histórico</strong>
+        <span class="resumo-sub">{{ "pedidos do portal ainda não contam" if pedidos else "nenhuma compra registrada" }}</span>
+        {% endif %}
+    </div>
+    <div class="resumo-item">
+        <span class="resumo-rotulo">Em aberto</span>
+        {% if propostas_abertas or pedidos_abertos %}
+        <strong>{{ propostas_abertas|length }} proposta{{ "s" if propostas_abertas|length != 1 }}</strong>
+        <span class="resumo-sub">{{ pedidos_abertos|length }} pedido{{ "s" if pedidos_abertos|length != 1 }} a retirar</span>
+        {% else %}
+        <strong class="resumo-falta">Nada em aberto</strong>
+        <span class="resumo-sub">sem proposta ou pedido</span>
+        {% endif %}
+    </div>
+</div>
+
+{% if not acesso_limitado %}
+<div id="finalizar-nao-usara" class="finalizar-form" style="display:none;">
+    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
+        <input type="hidden" name="resultado" value="sem_interesse">
+        <input type="hidden" name="origem" value="finalizar">
+        <div class="field2" style="margin-bottom:8px;">
+            <label>Qual produto o cliente não vai usar?</label>
+            <button type="button" class="multiselect-btn" onclick="alternar('produtos-nao-usara-lista', this)">
+                <span id="produtos-nao-usara-label">Selecione um ou mais produtos...</span> <span class="caret">&#9662;</span>
+            </button>
+            <div id="produtos-nao-usara-lista" class="multiselect-panel" style="display:none;">
+                {% for p in produtos %}
+                <label class="multiselect-item">
+                    <input type="checkbox" name="produtos" value="{{ p }}" style="width:auto;"
+                           onchange="atualizarLabelMultiselect('produtos-nao-usara-lista', 'produtos-nao-usara-label', 'Selecione um ou mais produtos...')"> {{ p }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="field2" style="margin-bottom:8px;"><label>Motivo</label><textarea name="texto" rows="2" required></textarea></div>
+        <button type="submit" class="btn-grey">Confirmar: não usará</button>
+    </form>
+</div>
+<div id="finalizar-perdido" class="finalizar-form" style="display:none;">
+    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
+        <input type="hidden" name="resultado" value="perdido">
+        <div class="field2" style="margin-bottom:8px;">
+            <label>Motivo da perda</label>
+            <select name="motivo_perdido" required>
+                <option value="">Selecione...</option>
+                {% for valor, label in motivos_perdido.items() %}
+                <option value="{{ valor }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field2" style="margin-bottom:8px;"><label>Detalhes</label><textarea name="texto" rows="2" required></textarea></div>
+        <div class="field2" style="margin-bottom:8px;">
+            <label>Reavaliar esse cliente em (opcional — entra na agenda)</label>
+            <input type="date" name="proximo_retorno">
+        </div>
+        <button type="submit" class="btn-red">Confirmar: perdido</button>
+    </form>
+</div>
+{% endif %}
+
+{% if cliente.precisa_ajuda %}
+{# Contato que nao funciona: caso com o administrador (Rafael, 2026-10-02) #}
+<section class="contato-resolver" id="contato-a-resolver">
+    <div class="contato-resolver-titulo"><i data-lucide="phone-off"></i>Contato com problema: {{ cliente.motivo_ajuda or "contato não funciona" }}</div>
+    {% if user.role == "admin" %}
+    <p class="contato-resolver-texto">{{ cliente.vendedor_nome or "O vendedor" }} não consegue falar com este cliente. Consiga outro número ou
+        meio de contato e envie para ele: o cliente volta para a agenda dele hoje.</p>
+    <form method="post" action="/crm/cliente/{{ cliente.id }}/contato-resolvido{{ q_via }}" data-guiado>
+        <div class="ficha-grid">
+            <div class="field2"><label>Novo telefone (se tiver)</label><input type="text" name="telefone" inputmode="tel" placeholder="DDD + número, ex: 86 99999-0000"></div>
+            <div class="field2"><label>Recado para o vendedor *</label><input type="text" name="observacao" required placeholder="ex.: ligar para o gerente, Sr. João, à tarde"></div>
+        </div>
+        <button type="submit"><i data-lucide="send"></i>Enviar novo contato ao vendedor</button>
+    </form>
+    {% else %}
+    <p class="contato-resolver-texto">O caso está com o administrador, que vai conseguir outro número ou meio de contato. Se você conseguir
+        falar com o cliente, registre "Conversamos" e o caso se encerra.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if acesso_limitado %}
+<div class="acesso-limitado-aviso">
+    Cliente da carteira de <b>{{ cliente.vendedor_nome }}</b>. Você vê este cliente porque ele recebeu produto de um
+    pedido da sua carteira: pode registrar o contato de pós-venda. Proposta, pedido e cadastro continuam com essa carteira.
+</div>
+{% elif caminho_venda %}
+{% include "_caminho_venda.html" %}
+{% endif %}
+
+{# Erro do Gerar pedido aparece dentro do proprio formulario, no caminho da venda #}
+{% if erro and not gerar_pedido_aberto %}<div class="erro" style="margin-bottom:1rem;">{{ erro }}</div>{% endif %}
 
 <div class="tabs-bar">
     <button type="button" id="tab-dados" class="tab-btn {{ 'active' if aba_inicial == 'dados' }}" onclick="mostrarAba('dados')">Dados do cliente</button>
-    <button type="button" id="tab-comentario" class="tab-btn {{ 'active' if aba_inicial == 'comentario' }}" onclick="mostrarAba('comentario')">Comentario</button>
+    <button type="button" id="tab-comentario" class="tab-btn {{ 'active' if aba_inicial == 'comentario' }}" onclick="mostrarAba('comentario')">Comentário</button>
+    {% if not acesso_limitado %}
     <button type="button" id="tab-propostas" class="tab-btn {{ 'active' if aba_inicial == 'propostas' }}" onclick="mostrarAba('propostas')">Proposta</button>
-    <button type="button" id="tab-pedidos" class="tab-btn {{ 'active' if aba_inicial == 'pedidos' }}" onclick="mostrarAba('pedidos')">Historico de pedidos{% if pedidos %} ({{ pedidos|length }}){% endif %}</button>
+    {% endif %}
+    <button type="button" id="tab-pedidos" class="tab-btn {{ 'active' if aba_inicial == 'pedidos' }}" onclick="mostrarAba('pedidos')">Histórico de pedidos{% if pedidos or recebimentos %} ({{ pedidos|length + recebimentos|length }}){% endif %}</button>
 </div>
 
 <div id="aba-dados" class="aba {{ 'aba-ativa' if aba_inicial == 'dados' }}">
     <div class="ficha-cliente">
-        <div class="card">
+        <div class="card" id="dados-cliente">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                 <h2 style="margin:0;">Dados do cliente</h2>
-                <a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/{{ cliente.id }}/editar">Editar cadastro</a>
+                {% if not acesso_limitado %}<a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/{{ cliente.id }}/editar{{ q_via }}">Editar cadastro</a>{% endif %}
             </div>
             <div class="ficha-grid">
-                <div class="field2"><label>Proprietario</label><div class="valor">{{ cliente.proprietario or "-" }}</div></div>
+                <div class="field2"><label>Proprietário</label><div class="valor">{{ cliente.proprietario or "-" }}</div></div>
                 <div class="field2"><label>Telefone</label><div class="valor">{{ cliente.telefone or "-" }}</div></div>
-                <div class="field2"><label>Email</label><div class="valor">{{ cliente.email or "-" }}</div></div>
+                <div class="field2"><label>E-mail</label><div class="valor">{{ cliente.email or "-" }}</div></div>
                 <div class="field2"><label>CNPJ</label><div class="valor">{{ cliente.cnpj or "-" }}</div></div>
                 <div class="field2"><label>Empresa</label><div class="valor">{{ cliente.empresa or "-" }}</div></div>
                 <div class="field2"><label>Forma de pagamento</label><div class="valor">{{ cliente.forma_pagamento or "-" }}</div></div>
-                <div class="field2"><label>Area plantada (ha)</label><div class="valor">{{ cliente.area_plantada_ha|numbr(0) if cliente.area_plantada_ha else "-" }}</div></div>
-                <div class="field2"><label>Frota propria</label><div class="valor">{{ "Sim" if cliente.frota_propria else "Nao" }}</div></div>
+                <div class="field2"><label>Área plantada (ha)</label><div class="valor">{{ cliente.area_plantada_ha|numbr(0) if cliente.area_plantada_ha else "-" }}</div></div>
+                <div class="field2"><label>Frota própria</label><div class="valor">{{ "Sim" if cliente.frota_propria else "Não" }}</div></div>
+                <div class="field2"><label>Tipo de cliente</label><div class="valor">{{ cliente.tipo_cliente() }}</div></div>
                 <div class="field2"><label>Categoria (calculada)</label><div class="valor">{{ cliente.categoria() or "-" }}</div></div>
-                <div class="field2"><label>Ultimo contato</label><div class="valor">{{ cliente.dias_desde_ultima_interacao() ~ " dias atras" if cliente.dias_desde_ultima_interacao() is not none else "-" }}</div></div>
-                <div class="field2"><label>Proximo retorno agendado</label><div class="valor">{{ cliente.proximo_retorno_em.strftime("%d/%m/%Y") if cliente.proximo_retorno_em else "-" }}</div></div>
+                <div class="field2"><label>Último contato</label><div class="valor">{{ "Nenhum contato registrado" if dias_ultimo_contato is none else ("Hoje" if dias_ultimo_contato == 0 else "Há " ~ dias_ultimo_contato ~ (" dia" if dias_ultimo_contato == 1 else " dias")) }}</div></div>
+                <div class="field2">
+                    <label>{{ "Reavaliar cliente perdido em" if cliente.fase == "perdido" else "Próximo retorno agendado" }}</label>
+                    <div class="valor">{{ cliente.proximo_retorno_em.strftime("%d/%m/%Y") if cliente.proximo_retorno_em else "-" }}</div>
+                </div>
+                {% if cliente.fase == "perdido" and cliente.motivo_perdido %}
+                <div class="field2"><label>Motivo da perda</label><div class="valor">{{ motivos_perdido.get(cliente.motivo_perdido, cliente.motivo_perdido) }}</div></div>
+                {% endif %}
             </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="contatos-adicionais">
             <h2 style="margin-top:0; margin-bottom:1rem;">Outros contatos</h2>
             <p style="color:var(--ink-soft); font-size:0.8rem; margin-top:-0.6rem; margin-bottom:0.8rem;">
                 Use pra registrar outros telefones da fazenda e quem atende neles — ex: o celular do
@@ -51,18 +211,21 @@
             {% for ca in cliente.contatos_adicionais %}
             <div class="contato-extra-row">
                 <span><strong>{{ ca.nome }}</strong> — {{ ca.funcao }} · {{ ca.telefone }}</span>
+                {% if not acesso_limitado %}
                 <form method="post" action="/crm/cliente/{{ cliente.id }}/contato-adicional/{{ ca.id }}/excluir" style="margin:0;">
                     <button type="submit">Remover</button>
                 </form>
+                {% endif %}
             </div>
             {% else %}
             <p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum contato adicional cadastrado.</p>
             {% endfor %}
+            {% if not acesso_limitado %}
             <form method="post" action="/crm/cliente/{{ cliente.id }}/contato-adicional" style="margin-top:10px;">
                 <div class="ficha-grid" style="margin-bottom:8px;">
                     <div class="field2"><label>Nome da pessoa</label><input type="text" name="nome" required></div>
                     <div class="field2">
-                        <label>Funcao</label>
+                        <label>Função</label>
                         <input type="text" name="funcao" list="lista-funcoes" placeholder="ex: Suprimentos" required>
                         <datalist id="lista-funcoes">
                             <option value="Proprietario">
@@ -73,127 +236,902 @@
                             <option value="Motorista/Logistica">
                         </datalist>
                     </div>
-                    <div class="field2" style="grid-column:1/3;"><label>Telefone</label><input type="text" name="telefone" placeholder="DDD + numero, ex: 86 99945-0475" required></div>
+                    <div class="field2" style="grid-column:1/3;"><label>Telefone</label><input type="text" name="telefone" placeholder="DDD + número, ex: 86 99999-0000" required></div>
                 </div>
                 <button type="submit">Adicionar</button>
             </form>
+            {% endif %}
         </div>
     </div>
 </div>
 
-<div id="aba-propostas" class="aba {{ 'aba-ativa' if aba_inicial == 'propostas' }}">
-    <p class="aviso-dados-exemplo" style="max-width:640px;">
-        A etapa avanca sozinha conforme voce registra uma proposta ou gera um pedido — ninguem precisa
-        mover o cliente manualmente no funil. Um pedido ja ativo nao impede uma nova proposta do mesmo
-        produto: pode ser que o cliente queira comprar mais.
-    </p>
-    <div class="ficha-grid">
-        {% for pe in produtos_estado %}
-        <div class="produto-card {{ 'livre' if pe.situacao == 'livre' else '' }}">
-            <h3>{{ pe.produto }}
-                {% if pe.situacao == "livre" %}<span class="log-badge grey">sem proposta em aberto</span>
-                {% else %}<span class="log-badge blue">proposta no {{ pe.proposta.numero }} em aberto</span>{% endif %}
-            </h3>
-
-            {% if pe.situacao == "livre" %}
-                <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/nova">
-                    <input type="hidden" name="produto" value="{{ pe.produto }}">
-                    <div class="ficha-grid" style="margin-bottom:8px;">
-                        <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_novo-{{ pe.produto }}" name="volume" oninput="atualizarTotal('novo-{{ pe.produto }}')" required></div>
-                        <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_novo-{{ pe.produto }}" name="preco" oninput="atualizarTotal('novo-{{ pe.produto }}')" required></div>
-                        <div class="field2"><label>Valor total</label><div class="valor" id="total_novo-{{ pe.produto }}">R$ 0,00</div></div>
-                        <div class="field2"><label>Pagamento</label>
-                            <select name="pagamento" required>
-                                <option value="">Selecione...</option>
-                                <option value="A vista">A vista</option>
-                                <option value="A prazo">A prazo</option>
-                            </select>
-                        </div>
-                        <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" placeholder="ex: 30 dias"></div>
-                        <div class="field2" style="grid-column:1/3;"><label>Observacoes (ex: pagamento em permuta)</label><textarea name="observacoes" rows="2"></textarea></div>
+{% set secao_inicial = aba_inicial if aba_inicial in ('comentario', 'propostas') else 'comentario' %}
+<div id="aba-acoes" class="aba {{ 'aba-ativa' if aba_inicial in ('comentario', 'propostas') }}">
+    <div class="ficha-cliente">
+        <div>
+            <div id="secao-comentario" class="secao-acao {{ 'secao-ativa' if secao_inicial == 'comentario' }}">
+                <div class="card">
+                    <h2 style="margin-top:0; margin-bottom:1rem;">Registrar contato</h2>
+                    {% if orientacao %}
+                    <div class="orientacao-contato orientacao-{{ orientacao.cor }}">
+                        <div class="orientacao-titulo">Sugestão para esta conversa: <strong>{{ orientacao.titulo }}</strong></div>
+                        <div class="orientacao-contexto">{{ orientacao.contexto }}</div>
+                        <ul>
+                            {% for pergunta in orientacao.perguntas %}<li>{{ pergunta }}</li>{% endfor %}
+                        </ul>
                     </div>
-                    <button type="submit">Registrar proposta de {{ pe.produto }}</button>
-                </form>
+                    {% endif %}
+                    {# Registrar contato com desfechos (Rafael, 2026-10-02): um toque pra dizer o
+                       que aconteceu; clima e motivo so quando fazem sentido; proximo contato ja
+                       vem sugerido pelo desfecho (o servidor aplica o mesmo padrao sem JS). #}
+                    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota" class="form-contato" id="form-contato">
+                        <div class="rc-rotulo">Como foi?</div>
+                        <div class="rc-resultados">
+                            {% for r in form_contato.resultados %}
+                            <label class="rc-opcao">
+                                <input type="radio" name="resultado" value="{{ r.valor }}" data-retorno="{{ r.retorno or '' }}">
+                                <i data-lucide="{{ r.icone }}"></i><span>{{ r.rotulo }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% if form_contato.anotacao %}
+                        <label class="rc-anotacao"><input type="radio" name="resultado" value="anotacao" data-retorno=""><i data-lucide="notebook-pen"></i>Só uma anotação, sem contato</label>
+                        {% endif %}
+                        {% if form_contato.dica %}<p class="nota" style="margin:8px 0 0;">{{ form_contato.dica }}</p>{% endif %}
 
-            {% else %}
-                {% set p = pe.proposta %}
-                <div class="ficha-grid" style="margin-bottom:8px;">
-                    <div class="field2"><label>Volume</label><div class="valor">{{ p.volume|numbr(1) }} t</div></div>
-                    <div class="field2"><label>Preco</label><div class="valor">R$ {{ p.preco|numbr(2) }}/t</div></div>
-                    <div class="field2"><label>Valor total</label><div class="valor">R$ {{ p.valor_total()|numbr(2) }}</div></div>
-                    <div class="field2"><label>Pagamento</label><div class="valor">{{ p.pagamento }}{{ " (" ~ p.prazo ~ ")" if p.prazo else "" }}</div></div>
-                    {% if p.observacoes %}<div class="field2" style="grid-column:1/3;"><label>Observacoes</label><div class="valor">{{ p.observacoes }}</div></div>{% endif %}
+                        {% if form_contato.temperatura %}
+                        <div class="rc-bloco" data-para="contato" hidden>
+                            <div class="rc-rotulo">Clima da conversa</div>
+                            <div class="rc-chips">
+                                {% for valor, rotulo, icone in [("quente", "Interessado", "flame"), ("morno", "Morno", "sun"), ("frio", "Frio", "snowflake")] %}
+                                <label class="rc-chip"><input type="radio" name="temperatura" value="{{ valor }}" data-retorno="{{ retorno_por_clima[valor] }}"><i data-lucide="{{ icone }}"></i>{{ rotulo }}</label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if form_contato.motivo %}
+                        <div class="rc-bloco" data-para="sem_interesse_agora" hidden>
+                            <div class="rc-rotulo">Por quê? <span class="rc-opcional">(opcional)</span></div>
+                            <div class="rc-chips">
+                                {% for m in motivos_sem_interesse %}<label class="rc-chip"><input type="checkbox" name="motivos" value="{{ m }}">{{ m }}</label>{% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {# Numero errado / sem WhatsApp: o que aconteceu (mesmos motivos da planilha) #}
+                        <div class="rc-bloco" data-para="contato_invalido" hidden>
+                            <div class="rc-rotulo">O que aconteceu?</div>
+                            <div class="rc-chips">
+                                {% for m in motivos_contato_invalido %}<label class="rc-chip"><input type="radio" name="motivo_contato" value="{{ m }}">{{ m }}</label>{% endfor %}
+                            </div>
+                            <p class="nota" style="margin:8px 0 0;">O caso vai para o administrador conseguir outro número ou meio de contato. A etapa do cliente não muda.</p>
+                        </div>
+                        {% if not acesso_limitado %}
+                        <div class="rc-bloco" data-para="nao_atendeu" hidden>
+                            <label class="rc-anotacao" style="margin-top:0;"><input type="checkbox" name="pedir_ajuda" value="1"><i data-lucide="life-buoy"></i>Já tentei várias vezes: pedir ajuda ao administrador</label>
+                            <p class="nota" style="margin:4px 0 0;">Na {{ tentativas_ajuda }}ª tentativa seguida sem resposta, o caso vai sozinho para o administrador.</p>
+                        </div>
+                        {% endif %}
+                        {% if form_contato.agenda %}
+                        <div class="rc-bloco" data-para="{{ form_contato.resultados|rejectattr('valor', 'equalto', 'contato_invalido')|map(attribute='valor')|join(' ') }} anotacao" hidden>
+                            <div class="rc-rotulo">Próximo contato</div>
+                            <div class="rc-chips">
+                                {% for valor, rotulo in [("2", "Em 2 dias"), ("7", "Em 1 semana"), ("15", "Em 15 dias"), ("30", "Em 1 mês")] %}
+                                <label class="rc-chip"><input type="radio" name="retorno" value="{{ valor }}">{{ rotulo }}</label>
+                                {% endfor %}
+                                {% if cliente.meses_compra_texto() %}<label class="rc-chip"><input type="radio" name="retorno" value="epoca">Na época de compra ({{ cliente.meses_compra_texto() }})</label>{% endif %}
+                                <label class="rc-chip"><input type="radio" name="retorno" value="data"><i data-lucide="calendar"></i>Outra data</label>
+                            </div>
+                            <input type="date" name="proximo_retorno" class="rc-data" hidden>
+                        </div>
+                        {% endif %}
+                        <div class="rc-rotulo">Observação <span class="rc-opcional" id="rc-obs-opcional">(opcional)</span></div>
+                        <textarea name="texto" rows="3"
+                                  placeholder="{{ orientacao.exemplo if orientacao and orientacao.exemplo else 'O que foi conversado com o cliente...' }}"></textarea>
+                        <p class="rc-erro" id="rc-erro" hidden></p>
+                        <button type="submit">Salvar contato</button>
+                    </form>
+                    <script>
+                    (function () {
+                        var form = document.getElementById("form-contato");
+                        var erro = document.getElementById("rc-erro");
+                        function atualizarData() {
+                            var data = form.querySelector(".rc-data");
+                            var escolhido = form.querySelector('input[name="retorno"]:checked');
+                            if (data) data.hidden = !(escolhido && escolhido.value === "data");
+                        }
+                        function marcarRetorno(dias) {
+                            form.querySelectorAll('input[name="retorno"]').forEach(function (r) {
+                                r.checked = dias !== "" && r.value === String(dias);
+                            });
+                            atualizarData();
+                        }
+                        form.querySelectorAll('input[name="resultado"]').forEach(function (r) {
+                            r.addEventListener("change", function () {
+                                erro.hidden = true;
+                                form.querySelectorAll(".rc-bloco").forEach(function (b) {
+                                    b.hidden = b.dataset.para.split(" ").indexOf(r.value) < 0;
+                                });
+                                form.querySelectorAll('input[name="temperatura"]').forEach(function (t) { t.checked = false; });
+                                marcarRetorno(r.dataset.retorno);
+                                // o que abriu (clima, motivo, proximo contato) fica a vista
+                                var abertos = form.querySelectorAll(".rc-bloco:not([hidden])");
+                                if (abertos.length) abertos[abertos.length - 1].scrollIntoView({block: "nearest", behavior: "smooth"});
+                                form.querySelector('textarea[name="texto"]').required = r.value === "anotacao";
+                                document.getElementById("rc-obs-opcional").hidden = r.value === "anotacao";
+                            });
+                        });
+                        form.querySelectorAll('input[name="temperatura"]').forEach(function (t) {
+                            t.addEventListener("change", function () { marcarRetorno(t.dataset.retorno); });
+                        });
+                        form.querySelectorAll('input[name="retorno"]').forEach(function (r) { r.addEventListener("change", atualizarData); });
+                        form.addEventListener("submit", function (ev) {
+                            var escolhido = form.querySelector('input[name="resultado"]:checked');
+                            if (!escolhido) {
+                                ev.preventDefault();
+                                erro.textContent = "Escolha como foi o contato.";
+                                erro.hidden = false;
+                            } else if (escolhido.value === "contato_invalido" && !form.querySelector('input[name="motivo_contato"]:checked')) {
+                                ev.preventDefault();
+                                erro.textContent = "Escolha o que aconteceu com o contato.";
+                                erro.hidden = false;
+                            }
+                        });
+                    })();
+                    </script>
                 </div>
-                <div class="btn-row">
-                    <button type="button" class="btn-secondary" onclick="alternar('editar-proposta-{{ p.id }}')">Editar proposta</button>
-                    <a href="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/gerar-pedido"><button type="button">Gerar pedido</button></a>
+            </div>
+
+            <div id="secao-propostas" class="secao-acao {{ 'secao-ativa' if secao_inicial == 'propostas' }}"{% if acesso_limitado %} hidden{% endif %}>
+                <p class="aviso-dados-exemplo">
+                    A etapa avança sozinha conforme você registra uma proposta ou gera um pedido — ninguém
+                    precisa mover o cliente manualmente no funil. Um pedido já ativo não impede uma nova
+                    proposta do mesmo produto: pode ser que o cliente queira comprar mais.
+                </p>
+                {% if creditos_por_produto %}
+                <div class="aviso-dados-exemplo">
+                    <strong>Crédito pendente deste cliente:</strong>
+                    <ul style="margin:6px 0 0; padding-left:1.2rem;">
+                        {% for produto, valor in creditos_por_produto.items() %}
+                        <li>{{ produto }}: R$ {{ valor|numbr(2) }}</li>
+                        {% endfor %}
+                    </ul>
+                    <p style="margin:8px 0 0;">
+                        Quantas toneladas isso vale depende do preço combinado agora — ao informar o preço
+                        na proposta nova abaixo, o equivalente em tonelada aparece automaticamente pro
+                        produto com crédito.
+                    </p>
                 </div>
-                <div id="editar-proposta-{{ p.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
-                    <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/editar">
+                {% endif %}
+
+                {% for p in propostas_abertas %}
+                <div class="produto-card" id="proposta-{{ p.id }}">
+                    <h3>{{ p.produto }} <span class="log-badge blue">proposta no {{ p.numero }} em aberto</span></h3>
+                    <div class="ficha-grid" style="margin-bottom:8px;">
+                        <div class="field2"><label>Volume</label><div class="valor">{{ p.volume|numbr(1) }} t</div></div>
+                        <div class="field2"><label>Preço</label><div class="valor">R$ {{ p.preco|numbr(2) }}/t</div></div>
+                        <div class="field2"><label>Valor total</label><div class="valor">R$ {{ p.valor_total()|numbr(2) }}</div></div>
+                        <div class="field2"><label>Pagamento</label><div class="valor">{{ p.pagamento }}{{ " (" ~ p.prazo ~ ")" if p.prazo else "" }}</div></div>
+                        {% if p.pagamento == "Plano safra" %}
+                        <div class="field2" style="grid-column:1/3;"><label>Plano safra</label>
+                            <div class="valor">
+                                {{ plano_safra_modalidades.get(p.plano_safra_modalidade, "Modalidade não informada") }}
+                                {% if p.plano_safra_parceiro %} — parceiro: {{ p.plano_safra_parceiro }}{% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if p.observacoes %}<div class="field2" style="grid-column:1/3;"><label>Observações</label><div class="valor">{{ p.observacoes }}</div></div>{% endif %}
+                    </div>
+                    {% if p.usa_credito %}
+                    {% set credito_disp = creditos_por_produto.get(p.produto, 0) %}
+                    {% set credito_ton = (credito_disp / p.preco) if p.preco else 0 %}
+                    <div class="campo-aviso aviso-similar ativo" style="margin-bottom:8px;">
+                        Vai aplicar o crédito do cliente ao gerar o pedido: R$ {{ credito_disp|numbr(2) }}
+                        (~{{ credito_ton|numbr(1) }} t extra sem cobrança) — volume total a entregar:
+                        {{ (p.volume + credito_ton)|numbr(1) }} t.
+                    </div>
+                    {% endif %}
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" onclick="alternar('editar-proposta-{{ p.id }}', this)">Editar proposta</button>
+                        <button type="button" onclick="abrirGerarPedido({{ p.id }})">Gerar pedido</button>
+                    </div>
+                    <div id="editar-proposta-{{ p.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+                        {% set credito_disp_editar = creditos_por_produto.get(p.produto, 0) %}
+                        {% set credito_ton_editar = (credito_disp_editar / p.preco) if (p.usa_credito and p.preco) else 0 %}
+                        <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/editar" data-guiado>
+                            <div class="ficha-grid" style="margin-bottom:8px;">
+                                <div class="field2">
+                                    <label>Preço (R$/t)</label>
+                                    <input type="number" step="0.01" id="preco_editar-{{ p.id }}" name="preco" value="{{ p.preco }}" oninput="atualizarCreditoInfo('editar-{{ p.id }}', '{{ p.produto }}')" required>
+                                    <div id="credito-info-editar-{{ p.id }}" class="campo-aviso aviso-similar"></div>
+                                    <div id="credito-usar-editar-{{ p.id }}" class="campo-aviso aviso-similar">
+                                        <label style="display:flex; align-items:center; gap:6px; font-weight:normal; color:inherit;">
+                                            <input type="checkbox" name="usar_credito" id="usar_credito_editar-{{ p.id }}" data-produto="{{ p.produto }}" style="width:auto;" {% if p.usa_credito %}checked{% endif %} onchange="atualizarCreditoInfo('editar-{{ p.id }}', '{{ p.produto }}')">
+                                            Aplicar este crédito a esta proposta (cliente recebe as toneladas extras sem cobrança ao gerar o pedido)
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="field2">
+                                    <label id="vol_label_editar-{{ p.id }}">{{ "Volume TOTAL a entregar (t)" if p.usa_credito else "Volume (t)" }}</label>
+                                    <input type="number" step="0.01" id="vol_editar-{{ p.id }}" name="volume"
+                                           value="{{ (p.volume + credito_ton_editar)|round(2) if p.usa_credito else p.volume }}"
+                                           oninput="atualizarCreditoInfo('editar-{{ p.id }}', '{{ p.produto }}')" required>
+                                    <div id="credito-split-editar-{{ p.id }}" class="campo-aviso aviso-similar"></div>
+                                </div>
+                                <div class="field2"><label>Valor total</label><div class="valor" id="total_editar-{{ p.id }}">R$ {{ p.valor_total()|numbr(2) }}</div></div>
+                                <div class="field2"><label>Pagamento</label>
+                                    <select name="pagamento" id="pagamento_editar-{{ p.id }}" onchange="atualizarCamposPagamento('editar-{{ p.id }}')" required>
+                                        <option value="A vista" {% if p.pagamento == "A vista" %}selected{% endif %}>A vista</option>
+                                        <option value="A prazo" {% if p.pagamento == "A prazo" %}selected{% endif %}>A prazo</option>
+                                        <option value="Plano safra" {% if p.pagamento == "Plano safra" %}selected{% endif %}>Plano safra</option>
+                                    </select>
+                                </div>
+                                <div class="field2" id="campo-prazo-editar-{{ p.id }}"><label>Prazo</label><input type="text" name="prazo" value="{{ p.prazo or '' }}"></div>
+                                <div class="field2" id="campo-modalidade-editar-{{ p.id }}"><label>Modalidade do plano safra</label>
+                                    <select name="plano_safra_modalidade" id="modalidade_editar-{{ p.id }}" onchange="atualizarCamposPagamento('editar-{{ p.id }}')">
+                                        <option value="">Selecione...</option>
+                                        {% for valor, label in plano_safra_modalidades.items() %}
+                                        <option value="{{ valor }}" {% if p.plano_safra_modalidade == valor %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="field2" id="campo-parceiro-editar-{{ p.id }}"><label>Parceiro da cessão</label>
+                                    <select name="plano_safra_parceiro" onchange="if (this.value === '__novo__') abrirCadastroParceiro(this);">
+                                        <option value="">Selecione...</option>
+                                        {% for parc in parceiros_cadastrados %}
+                                        <option value="{{ parc.nome }}" {% if p.plano_safra_parceiro == parc.nome %}selected{% endif %}>{{ parc.nome }}{{ ' — sem CNPJ' if not parc.cnpj }}</option>
+                                        {% endfor %}
+                                        <option value="__novo__">+ Cadastrar parceiro</option>
+                                </select>
+                                <div class="parceiro-novo" hidden></div>
+                                </div>
+                                <div class="field2" style="grid-column:1/3;"><label>Observações</label><textarea name="observacoes" rows="2">{{ p.observacoes or '' }}</textarea></div>
+                            </div>
+                            <button type="submit">Atualizar proposta</button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if produtos_disponiveis %}
+                {% if propostas_abertas %}
+                <button type="button" class="btn-add-produto" onclick="alternar('nova-proposta-form', this)">+ Novo produto</button>
+                {% endif %}
+                <div id="nova-proposta-form" class="produto-card livre" style="{{ 'display:none;' if propostas_abertas }} margin-top:{{ '12px' if propostas_abertas else '0' }};">
+                    <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/nova" data-guiado>
                         <div class="ficha-grid" style="margin-bottom:8px;">
-                            <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_editar-{{ p.id }}" name="volume" value="{{ p.volume }}" oninput="atualizarTotal('editar-{{ p.id }}')" required></div>
-                            <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_editar-{{ p.id }}" name="preco" value="{{ p.preco }}" oninput="atualizarTotal('editar-{{ p.id }}')" required></div>
-                            <div class="field2"><label>Valor total</label><div class="valor" id="total_editar-{{ p.id }}">R$ {{ p.valor_total()|numbr(2) }}</div></div>
-                            <div class="field2"><label>Pagamento</label>
-                                <select name="pagamento" required>
-                                    <option value="A vista" {% if p.pagamento == "A vista" %}selected{% endif %}>A vista</option>
-                                    <option value="A prazo" {% if p.pagamento == "A prazo" %}selected{% endif %}>A prazo</option>
+                            <div class="field2" style="grid-column:1/3;">
+                                <label>Produto</label>
+                                <select name="produto" id="produto_novo" onchange="atualizarCreditoInfo('novo')" required>
+                                    <option value="">Selecione...</option>
+                                    {% for prod in produtos_disponiveis %}
+                                    <option value="{{ prod }}">{{ prod }}</option>
+                                    {% endfor %}
                                 </select>
                             </div>
-                            <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" value="{{ p.prazo or '' }}"></div>
-                            <div class="field2" style="grid-column:1/3;"><label>Observacoes</label><textarea name="observacoes" rows="2">{{ p.observacoes or '' }}</textarea></div>
+                            <div class="field2">
+                                <label>Preço (R$/t)</label>
+                                <input type="number" step="0.01" id="preco_novo" name="preco" oninput="atualizarCreditoInfo('novo')" required>
+                                <div id="credito-info-novo" class="campo-aviso aviso-similar"></div>
+                                <div id="credito-usar-novo" class="campo-aviso aviso-similar">
+                                    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; color:inherit;">
+                                        <input type="checkbox" name="usar_credito" id="usar_credito_novo" style="width:auto;" onchange="atualizarCreditoInfo('novo')">
+                                        Aplicar este crédito a esta proposta (cliente recebe as toneladas extras sem cobrança ao gerar o pedido)
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="field2">
+                                <label id="vol_label_novo">Volume (t)</label>
+                                <input type="number" step="0.01" id="vol_novo" name="volume" oninput="atualizarCreditoInfo('novo')" required>
+                                <div id="credito-split-novo" class="campo-aviso aviso-similar"></div>
+                            </div>
+                            <div class="field2"><label>Valor total</label><div class="valor" id="total_novo">R$ 0,00</div></div>
+                            <div class="field2"><label>Pagamento</label>
+                                <select name="pagamento" id="pagamento_novo" onchange="atualizarCamposPagamento('novo')" required>
+                                    <option value="">Selecione...</option>
+                                    <option value="A vista">A vista</option>
+                                    <option value="A prazo">A prazo</option>
+                                    <option value="Plano safra">Plano safra</option>
+                                </select>
+                            </div>
+                            <div class="field2" id="campo-prazo-novo" style="display:none;"><label>Prazo</label><input type="text" name="prazo" placeholder="ex: 30 dias"></div>
+                            <div class="field2" id="campo-modalidade-novo" style="display:none;"><label>Modalidade do plano safra</label>
+                                <select name="plano_safra_modalidade" id="modalidade_novo" onchange="atualizarCamposPagamento('novo')">
+                                    <option value="">Selecione...</option>
+                                    {% for valor, label in plano_safra_modalidades.items() %}
+                                    <option value="{{ valor }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="field2" id="campo-parceiro-novo" style="display:none;"><label>Parceiro da cessão</label>
+                                <select name="plano_safra_parceiro" onchange="if (this.value === '__novo__') abrirCadastroParceiro(this);">
+                                    <option value="">Selecione...</option>
+                                    {% for parc in parceiros_cadastrados %}
+                                    <option value="{{ parc.nome }}">{{ parc.nome }}{{ ' — sem CNPJ' if not parc.cnpj }}</option>
+                                    {% endfor %}
+                                    <option value="__novo__">+ Cadastrar parceiro</option>
+                                </select>
+                                <div class="parceiro-novo" hidden></div>
+                                {% if not parceiros_cadastrados %}
+                                <p class="cv-nota" style="margin:4px 0 0;">Nenhum parceiro cadastrado ainda: escolha "+ Cadastrar parceiro".</p>
+                                {% endif %}
+                            </div>
+                            <div class="field2" style="grid-column:1/3;"><label>Observações (ex: pagamento em permuta)</label><textarea name="observacoes" rows="2"></textarea></div>
                         </div>
-                        <button type="submit">Atualizar proposta</button>
+                        <button type="submit">Registrar proposta</button>
                     </form>
                 </div>
+                {% elif not propostas_abertas %}
+                <p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum produto disponível para proposta.</p>
+                {% else %}
+                <p style="color:var(--ink-soft); font-size:0.85rem; margin-top:12px;">Todos os produtos já têm proposta em aberto para este cliente.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="margin:0;">Histórico</h2>
+                <button type="button" class="btn-secondary" style="padding:5px 11px; font-size:0.75rem;" onclick="alternar('atalho-comentario', this)"><i data-lucide="plus"></i>Comentário</button>
+            </div>
+            <div id="atalho-comentario" style="display:none; margin-bottom:1rem;">
+                <form method="post" action="/crm/cliente/{{ cliente.id }}/nota"
+                      onsubmit="document.getElementById('atalho-aba-retorno').value = document.getElementById('secao-propostas').classList.contains('secao-ativa') ? 'propostas' : 'comentario';">
+                    <input type="hidden" name="aba_retorno" id="atalho-aba-retorno" value="comentario">
+                    <input type="hidden" name="resultado" value="anotacao">
+                    <div class="field2" style="margin-bottom:8px;">
+                        <textarea name="texto" rows="2" placeholder="Escreva um comentário rápido, sem sair daqui..." required></textarea>
+                    </div>
+                    <button type="submit">Salvar comentário</button>
+                </form>
+            </div>
+            {% macro historico_item(h) %}
+            {% set autor_nome = h.autor or "Sistema" %}
+            {% if h.tipo == "proposta" and h.numero %}
+            {% set p_atual = propostas_por_numero.get(h.numero) %}
+            {% set substituida_em = proposta_substituida_em.get(h.id) %}
+            <li id="hist-{{ h.id }}" class="tl-item tl-proposta{{ ' tl-proposta-antiga' if h.id in proposta_substituida_em }}">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-proposta-head">
+                        <span class="tl-proposta-produto-label">{{ h.produto }}</span>
+                        <span class="tl-proposta-numero">Nº {{ h.numero }}</span>
+                    </div>
+                    <div class="tl-proposta-grid">
+                        <div><span class="tpk">Volume</span><span class="tpv">{{ h.volume|numbr(1) }} t</span></div>
+                        <div><span class="tpk">Preço</span><span class="tpv">R$ {{ h.preco|numbr(2) }}/t</span></div>
+                        <div><span class="tpk">Pagamento</span><span class="tpv">{{ h.pagamento or "-" }}</span></div>
+                        <div class="tl-proposta-total"><span class="tpk">Total</span><span class="tpv">R$ {{ (h.volume * h.preco)|numbr(2) }}</span></div>
+                    </div>
+                    {% if substituida_em %}
+                    <div class="tl-proposta-versao">Versão anterior, substituída em {{ substituida_em.strftime("%d/%m às %H:%M") }}. Vale a versão mais recente.</div>
+                    {% elif p_atual and p_atual.status == "aberta" %}
+                    <div class="tl-proposta-btns">
+                        <button type="button" class="tl-proposta-btn" onclick="editarPropostaDoHistorico({{ p_atual.id }})">Editar proposta</button>
+                        <button type="button" class="tl-proposta-btn tl-proposta-btn-gerar" onclick="abrirGerarPedido({{ p_atual.id }})">Gerar pedido</button>
+                    </div>
+                    {% elif p_atual and p_atual.status == "convertida" %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-ativo">Essa proposta já virou pedido.</div>
+                    {% endif %}
+                </div>
+            </li>
+            {% elif h.tipo in ("pedido", "pedido_cancelado", "pedido_finalizado") and h.numero %}
+            <li id="hist-{{ h.id }}" class="tl-item {% if h.tipo == 'pedido_cancelado' %}tl-pedido-cancelado{% elif h.tipo == 'pedido_finalizado' %}tl-pedido-finalizado{% else %}tl-pedido{% endif %}">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-proposta-head">
+                        <span class="tl-proposta-produto-label">{{ h.produto }}</span>
+                        <span class="tl-proposta-numero">{{ h.numero|codigo_pedido }}</span>
+                    </div>
+                    <div class="tl-proposta-grid">
+                        <div><span class="tpk">Volume</span><span class="tpv">{{ h.volume|numbr(1) }} t</span></div>
+                        <div><span class="tpk">Preço</span><span class="tpv">R$ {{ h.preco|numbr(2) }}/t</span></div>
+                        <div><span class="tpk">Pagamento</span><span class="tpv">{{ h.pagamento or "-" }}</span></div>
+                        <div class="tl-proposta-total"><span class="tpk">Total</span><span class="tpv">R$ {{ (h.volume * h.preco)|numbr(2) }}</span></div>
+                    </div>
+                    {% if h.tipo == "pedido" %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-ativo">Venda realizada.</div>
+                    {% elif h.tipo == "pedido_finalizado" %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-finalizado">Pedido finalizado.</div>
+                    {% else %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-cancelado">Pedido cancelado.</div>
+                    {% endif %}
+                </div>
+            </li>
+            {% elif h.tipo in ("destino_final", "destino_registrado") %}
+            {# destino_final = historico do cliente que recebeu; destino_registrado = historico do comprador (parceiro/transportadora). #}
+            {% set rel = clientes_relacionados.get(h.cliente_relacionado_id) %}
+            {% set eh_recebimento = h.tipo == "destino_final" %}
+            {% if eh_recebimento %}
+            {# O pedido aparece na aba de pedidos DESTE cliente -- sempre acessivel. #}
+            {% set destino_cancelado = h.numero in destinos_cancelados %}
+            {% set canal = ("transportadora" if rel.e_transportadora else ("consultor" if rel.e_consultor else "parceiro")) if rel else "parceiro" %}
+            {% set link_rel = "/crm/cliente/" ~ cliente.id ~ "?aba=pedidos" %}
+            {% set pode_abrir = True %}
+            {% set titulo_link = "Ver no historico de pedidos" %}
+            {% else %}
+            {% set pd_rel = pedidos_por_numero.get(h.numero) %}
+            {% set destino_cancelado = pd_rel and pd_rel.status == "cancelado" %}
+            {% set link_rel = "/crm/cliente/" ~ rel.id ~ "?aba=pedidos" if rel else None %}
+            {# Destino final de pedido da propria carteira sempre abre, mesmo sendo cliente de outra carteira (acesso so pro pos-venda). #}
+            {% set pode_abrir = rel and (user.role != "vendedor" or rel.vendedor_nome == user.vendedor_nome
+                                         or cliente.vendedor_nome == user.vendedor_nome) %}
+            {% set titulo_link = "Abrir " ~ rel.fazenda if rel else "" %}
+            {% endif %}
+            <li id="hist-{{ h.id }}" class="tl-item {{ 'tl-pedido-cancelado' if destino_cancelado else 'tl-pedido' }}{{ ' tl-clicavel' if pode_abrir }}"
+                {% if pode_abrir %}onclick="location.href='{{ link_rel }}'" title="{{ titulo_link }}"{% endif %}>
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-proposta-head">
+                        <span class="tl-proposta-produto-label">{{ h.produto }}</span>
+                        <span class="tl-proposta-numero">{{ h.numero|codigo_pedido }}</span>
+                    </div>
+                    <div class="tl-proposta-grid">
+                        <div style="grid-column:1/3;"><span class="tpk">{{ "Comprado por (" ~ canal ~ ")" if eh_recebimento else "Cliente final" }}</span><span class="tpv">{{ rel.fazenda if rel else "-" }}</span></div>
+                        <div><span class="tpk">Volume</span><span class="tpv">{{ h.volume|numbr(1) }} t</span></div>
+                        {% if rel and rel.vendedor_nome and rel.vendedor_nome != cliente.vendedor_nome %}
+                        <div><span class="tpk">Carteira</span><span class="tpv">{{ rel.vendedor_nome }}</span></div>
+                        {% endif %}
+                        {% if "Obs: " in h.texto %}
+                        <div style="grid-column:1/3;"><span class="tpk">Observações</span><span class="tpv">{{ h.texto.split("Obs: ", 1)[1] }}</span></div>
+                        {% endif %}
+                    </div>
+                    {% if destino_cancelado %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-cancelado">
+                        {{ "Pedido cancelado — o produto não chegou." if eh_recebimento else "Pedido cancelado — o produto não foi entregue." }}
+                    </div>
+                    {% elif eh_recebimento %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-destino">
+                        Venda através {{ "da" if canal == "transportadora" else "do" }} {{ canal }}. Faça o pós-venda direto com este cliente.
+                        <a href="{{ link_rel }}">Ver pedido ›</a>
+                    </div>
+                    {% else %}
+                    <div class="tl-proposta-resultado tl-proposta-resultado-destino">
+                        Destino final registrado.
+                        {% if pode_abrir %}<a href="{{ link_rel }}">Ver cliente final ›</a>
+                        {% elif rel %}(cliente de outra carteira){% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </li>
+            {% elif h.tipo == "mudanca_fase" and h.fase_destino %}
+            <li id="hist-{{ h.id }}" class="tl-item tl-fase">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-fase-mudanca">
+                        <span class="tl-fase-label">Etapa avançou:</span>
+                        {% if h.fase_origem %}
+                        <span class="log-badge {{ fase_cor.get(h.fase_origem, '') }}">{{ fase_label.get(h.fase_origem, h.fase_origem) }}</span>
+                        <span class="tl-fase-seta">&rarr;</span>
+                        {% endif %}
+                        <span class="log-badge {{ fase_cor.get(h.fase_destino, '') }}">{{ fase_label.get(h.fase_destino, h.fase_destino) }}</span>
+                    </div>
+                </div>
+            </li>
+            {% elif h.tipo in ("agenda", "dados", "pagamento") %}
+            <li id="hist-{{ h.id }}" class="tl-item {% if h.tipo == 'agenda' %}tl-agenda{% endif %}">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-fase-mudanca">
+                        <span class="log-badge {{ {'agenda': 'mineral', 'pagamento': 'green'}.get(h.tipo, '') }}">{{ {"agenda": "Agendamento", "pagamento": "Pagamento"}.get(h.tipo, "Cadastro") }}</span>
+                    </div>
+                    <div class="tl-text" style="margin-top:6px;">{{ h.texto }}</div>
+                </div>
+            </li>
+            {% elif h.tipo == "nota" and h.resultado %}
+            <li id="hist-{{ h.id }}" class="tl-item tl-resultado-{{ h.resultado }}">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-fase-mudanca">
+                        <span class="log-badge {{ resultado_cor.get(h.resultado, '') }}">{{ resultados.get(h.resultado, h.resultado) }}</span>
+                    </div>
+                    <div class="tl-text" style="margin-top:6px;">{{ h.texto }}</div>
+                </div>
+            </li>
+            {% else %}
+            <li id="hist-{{ h.id }}" class="tl-item">
+                <span class="tl-avatar {{ 'tl-avatar-sistema' if not h.autor }}" title="{{ autor_nome }}">{{ autor_nome[0]|upper }}</span>
+                <div class="tl-content">
+                    <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }} · {{ autor_nome }}</span>
+                    <div class="tl-text">{{ h.texto }}</div>
+                </div>
+            </li>
+            {% endif %}
+            {% endmacro %}
+
+            {% if not historico_pinned and not historico_atual and not historico_grupos %}
+            <p style="color:var(--ink-soft); font-size:0.85rem;">Sem histórico ainda.</p>
+            {% else %}
+            {% if historico_pinned %}
+            <ul class="timeline">
+                <li class="tl-fixado-label"><i data-lucide="pin"></i>Proposta{{ "s" if historico_pinned|length > 1 }} em aberto</li>
+                {% for h in historico_pinned %}{{ historico_item(h) }}{% endfor %}
+            </ul>
+            {% endif %}
+            {% if historico_atual %}
+            <ul class="timeline">
+                {% for h in historico_atual %}{{ historico_item(h) }}{% endfor %}
+            </ul>
+            {% endif %}
+            {% for grupo in historico_grupos %}
+            <details class="historico-periodo">
+                <summary>{{ grupo.label }} <span class="historico-periodo-contagem">({{ grupo.itens|length }})</span></summary>
+                <ul class="timeline">
+                    {% for h in grupo.itens %}{{ historico_item(h) }}{% endfor %}
+                </ul>
+            </details>
+            {% endfor %}
             {% endif %}
         </div>
-        {% endfor %}
     </div>
 </div>
 
 <div id="aba-pedidos" class="aba {{ 'aba-ativa' if aba_inicial == 'pedidos' }}">
+    {% set creditos = pedidos|selectattr("saldo_credito_valor")|list %}
+    {% if creditos %}
+    <div class="aviso-dados-exemplo">
+        <strong>Crédito pendente deste cliente</strong> — pagou antecipado e não retirou tudo, informar numa próxima negociação:
+        <ul style="margin:6px 0 0; padding-left:1.2rem;">
+            {% for pd in creditos %}
+            <li>R$ {{ pd.saldo_credito_valor|numbr(2) }} de {{ pd.produto }} (pedido {{ pd.codigo }}, equivalia a {{ pd.saldo_credito|numbr(1) }} t ao preço daquela venda)</li>
+            {% endfor %}
+        </ul>
+        <p style="margin:8px 0 0;">O valor em R$ é o que vale de verdade — quantas toneladas isso dá hoje depende do preço combinado na próxima proposta.</p>
+    </div>
+    {% endif %}
+    {# Pedido compacto (Rafael, 2026-10-02): so o resumo; clicando abre tudo, inclusive Renegociar,
+       Finalizar e Cancelar -- o proximo passo ja tem botao no caminho da venda, e Cancelar (que nao
+       se desfaz) nao fica exposto na lista. Depois de salvar, o #pedido-{id} abre sozinho (base.html). #}
+    {% set forma_curta = {"A vista": "à vista", "A prazo": "a prazo", "Plano safra": "plano safra"} %}
     {% for pd in pedidos %}
-    <div class="produto-card">
-        <h3>{{ pd.produto }} — pedido no {{ pd.numero }}
-            {% if pd.status == "aberto" %}<span class="log-badge green">ativo</span>
-            {% else %}<span class="log-badge red">cancelado</span>{% endif %}
-        </h3>
+    {% set situacao_pg = pd.situacao_pagamento() %}
+    <details class="produto-card pedido-card pedido-{{ pd.status }}" id="pedido-{{ pd.id }}">
+        {# Mesmo formato da proposta no historico: produto + Nº, grade Volume/Preco/Pagamento/Total #}
+        <summary class="pedido-resumo" onclick="var d = this.parentElement; setTimeout(function () { if (d.open) levarAte(d, {focar: false, destacar: false}); }, 0);">
+            <span class="pedido-resumo-corpo">
+                <span class="tl-proposta-head">
+                    <span class="pedido-resumo-titulo">
+                        <span class="tl-proposta-produto-label">{{ pd.produto }}</span>
+                        {% if pd.status == "aberto" %}<span class="log-badge green">ativo</span>
+                        {% elif pd.status == "finalizado" %}<span class="log-badge mineral">finalizado</span>
+                        {% else %}<span class="log-badge red">cancelado</span>{% endif %}
+                        {% if pd.vencido() %}<span class="badge-vencido">VENCIDO</span>{% endif %}
+                        {% if situacao_pg == "liberado" %}<span class="log-badge green">carregamento liberado</span>
+                        {% elif situacao_pg == "em_conferencia" %}<span class="log-badge blue">pagamento em conferência</span>
+                        {% elif situacao_pg == "recusado" %}<span class="log-badge red">comprovante recusado</span>
+                        {% elif situacao_pg %}<span class="log-badge gold">aguardando pagamento</span>{% endif %}
+                        {% if cliente.entrega_em_outro_lugar() and not pd.destinos_finais and pd.status != "cancelado" %}
+                        <span class="chip-falta-destino" title="O produto não é entregue no endereço deste cliente: registre o destino final"><i data-lucide="truck"></i>falta destino final</span>{% endif %}
+                    </span>
+                    <span class="tl-proposta-numero">{{ pd.codigo }}{% if pd.aguardando_netsuite() %} <span class="chip-netsuite" title="O SO é dado pelo NetSuite quando o pedido é lançado lá">aguardando NetSuite</span>{% endif %}</span>
+                </span>
+                <span class="tl-proposta-grid">
+                    <span><span class="tpk">Volume</span><span class="tpv">{{ pd.volume_total_a_entregar()|numbr(1) }} t</span></span>
+                    <span><span class="tpk">Preço</span><span class="tpv">R$ {{ pd.preco|numbr(2) }}/t</span></span>
+                    <span><span class="tpk">Pagamento</span><span class="tpv">{{ forma_curta.get(pd.pagamento, pd.pagamento)|capitalize }}</span></span>
+                    <span><span class="tpk">{{ "Retirado" if pd.volume_retirado is not none else "Gerado em" }}</span><span class="tpv">
+                        {%- if pd.volume_retirado is not none %}{{ pd.volume_retirado|numbr(1) }} t
+                        {%- if pd.status == "aberto" and pd.volume_total_a_entregar() %} ({{ [100, (pd.volume_retirado / pd.volume_total_a_entregar() * 100)|round|int]|min }}%){% endif %}{% else %}{{ pd.criado_em.strftime("%d/%m/%Y") if pd.criado_em else "—" }}{% endif %}</span></span>
+                    <span class="tl-proposta-total"><span class="tpk">Total</span><span class="tpv">R$ {{ pd.valor_total()|numbr(2) }}{% if pd.saldo_credito_valor %} <small class="pedido-resumo-credito">· crédito de R$ {{ pd.saldo_credito_valor|numbr(2) }}</small>{% endif %}</span></span>
+                </span>
+            </span>
+            <span class="pedido-resumo-seta"><i data-lucide="chevron-down"></i></span>
+        </summary>
+        <div class="pedido-corpo">
+        {# O SO e do NetSuite: o portal mostra o provisorio PV ate o pedido ser lancado la (Rafael, 2026-10-03) #}
+        {% if pd.pedido_netsuite %}
+        <div class="netsuite-bloco">
+            <i data-lucide="link"></i> Lançado no NetSuite como <strong>{{ pd.pedido_netsuite }}</strong>
+            · no portal era {{ pd.codigo_portal }}{% if pd.vinculado_por %} · ligado por {{ pd.vinculado_por }}{% endif %}.
+            {% if pd.status == "aberto" and pd.volume_retirado is not none %}Carregado no NetSuite: {{ pd.volume_retirado|numbr(1) }} t.{% endif %}
+            {% if user.role == "admin" %}
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/netsuite/desligar" style="display:inline; margin:0;"
+                  onsubmit="return confirm('Desligar o {{ pd.pedido_netsuite }} deste pedido?');">
+                <button type="submit" class="btn-link-discreto">Desligar</button>
+            </form>
+            {% endif %}
+        </div>
+        {% elif pd.status != "cancelado" and not acesso_limitado and user.role in ("admin", "vendedor") %}
+        <div class="netsuite-bloco">
+            <i data-lucide="hourglass"></i> <strong>Aguardando o NetSuite.</strong> O número SO é dado pelo NetSuite quando o pedido é
+            lançado lá; a planilha de Expedição liga sozinha quando cliente, produto e volume batem. Já foi lançado e não ligou? Informe o número:
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/netsuite">
+                <input type="text" name="numero" placeholder="Ex.: 106605/SO3451" required aria-label="Número do pedido no NetSuite">
+                <button type="submit" class="btn-secondary"><i data-lucide="link"></i> Ligar ao NetSuite</button>
+            </form>
+        </div>
+        {% endif %}
+        {% if situacao_pg and situacao_pg != "liberado" %}
+        {# Pedido a vista: carregamento so com pagamento confirmado pelo financeiro (Rafael, 2026-10-02) #}
+        {% set pode_enviar = not acesso_limitado and user.role in ("admin", "vendedor") %}
+        <div class="pagamento-bloqueio pagamento-{{ situacao_pg }}" id="comprovante-{{ pd.id }}">
+            {% if situacao_pg == "em_conferencia" %}
+            <div class="pagamento-bloqueio-titulo"><i data-lucide="hourglass"></i> Pagamento em conferência pelo financeiro</div>
+            <p class="pagamento-bloqueio-texto">
+                Comprovante enviado em {{ pd.comprovantes_pendentes()[-1].criado_em.strftime("%d/%m às %H:%M") }}. O carregamento é
+                liberado assim que o financeiro confirmar o pagamento. Você recebe um aviso.
+            </p>
+            {% if user.role == "admin" %}<a class="back-btn" style="margin:0;" href="/financeiro/pagamentos#pagamento-{{ pd.id }}"><i data-lucide="banknote"></i>Conferir agora</a>{% endif %}
+            {% else %}
+            <div class="pagamento-bloqueio-titulo"><i data-lucide="lock"></i>
+                {{ "Comprovante recusado pelo financeiro" if situacao_pg == "recusado" else "Carregamento bloqueado: aguardando o pagamento" }}</div>
+            <p class="pagamento-bloqueio-texto">
+                {% if situacao_pg == "recusado" %}Motivo: {{ pd.comprovantes[-1].motivo_recusa }}. Envie outro comprovante para liberar o carregamento.
+                {% elif situacao_pg == "diferenca" %}O valor do pedido subiu depois do pagamento confirmado. Anexe o comprovante da diferença para liberar o carregamento.
+                {% else %}Pedido à vista: o cliente paga o total e retira. Anexe o comprovante de pagamento; o financeiro confere e libera o carregamento.{% endif %}
+            </p>
+            {% if pode_enviar %}
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/comprovante" enctype="multipart/form-data" class="pagamento-bloqueio-form">
+                <input type="file" name="comprovante" accept=".pdf,.jpg,.jpeg,.png" required>
+                <button type="submit"><i data-lucide="upload"></i> Enviar comprovante</button>
+            </form>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if pd.vencido() %}
+        <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px; background:var(--red-bg); border:1px solid var(--red); font-size:0.85rem;">
+            <span class="badge-vencido">VENCIDO</span> o prazo pra retirar esse pedido passou há
+            {{ -pd.dias_restantes() }} dia{{ "s" if -pd.dias_restantes() != 1 }} e o cliente ainda não
+            retirou nada — entre em contato.
+        </div>
+        {% endif %}
+        {% if pd.credito_aplicado_valor %}
+        <div class="campo-aviso aviso-similar ativo" style="margin-bottom:8px;">
+            <strong>Inclui crédito de pedido anterior:</strong> R$ {{ pd.credito_aplicado_valor|numbr(2) }}
+            (~{{ pd.toneladas_credito_aplicado()|numbr(1) }} t extra, sem cobrança) — volume total a
+            entregar neste pedido: <strong>{{ pd.volume_total_a_entregar()|numbr(1) }} t</strong>.
+        </div>
+        {% endif %}
         <div class="ficha-grid" style="margin-bottom:8px;">
-            <div class="field2"><label>Volume contratado</label><div class="valor">{{ pd.volume|numbr(1) }} t</div></div>
-            <div class="field2"><label>Preco</label><div class="valor">R$ {{ pd.preco|numbr(2) }}/t</div></div>
+            <div class="field2"><label>{{ "Volume novo (cobrado)" if pd.credito_aplicado_valor else "Volume contratado" }}</label><div class="valor">{{ pd.volume|numbr(1) }} t</div></div>
+            {% if pd.credito_aplicado_valor %}
+            <div class="field2"><label>Volume total a entregar</label><div class="valor">{{ pd.volume_total_a_entregar()|numbr(1) }} t <span class="log-badge gold">+{{ pd.toneladas_credito_aplicado()|numbr(1) }} t crédito</span></div></div>
+            {% endif %}
+            <div class="field2"><label>Preço</label><div class="valor">R$ {{ pd.preco|numbr(2) }}/t</div></div>
             <div class="field2"><label>Valor total</label><div class="valor">R$ {{ pd.valor_total()|numbr(2) }}</div></div>
             <div class="field2"><label>Pagamento</label><div class="valor">{{ pd.pagamento }}{{ " (" ~ pd.prazo ~ ")" if pd.prazo else "" }}</div></div>
-            <div class="field2"><label>Retirado ate agora</label>
-                <div class="valor">{{ (pd.volume_retirado|numbr(1) ~ " t") if pd.volume_retirado is not none else "Ainda nao sincronizado (vira do NetSuite)" }}</div>
+            {% if pd.regra_pagamento() %}
+            <div class="field2" style="grid-column:1/3;"><label>Como o cliente paga</label><div class="valor">{{ pd.regra_pagamento() }}</div></div>
+            {% endif %}
+            {% if pd.pagamento == "Plano safra" %}
+            <div class="field2" style="grid-column:1/3;"><label>Plano safra</label>
+                <div class="valor">
+                    {{ plano_safra_modalidades.get(pd.plano_safra_modalidade, "Modalidade não informada") }}
+                    {% if pd.plano_safra_parceiro %} — parceiro: {{ pd.plano_safra_parceiro }}{% endif %}
+                    {% if pd.contrato_cessao_path %}
+                    · <a href="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/contrato-cessao" target="_blank">Ver contrato de cessão ›</a>
+                    {% endif %}
+                </div>
             </div>
+            {% endif %}
             <div class="field2"><label>Faturado por</label><div class="valor">{{ pd.subsidiaria_nome or "-" }}</div></div>
             <div class="field2" style="grid-column:1/3;"><label>Faturamento</label><div class="valor">{{ pd.faturamento_nome }} ({{ pd.faturamento_documento }})</div></div>
+            {% if pd.condicao_pagamento %}
+            <div class="field2" style="grid-column:1/3;"><label>Condição de retirada</label>
+                <div class="valor">
+                    {% if pd.condicao_pagamento == "antecipado" and pd.pagamento == "A vista" %}Paga o total à vista e retira (se não retirar tudo, a sobra vira crédito)
+                    {% elif pd.condicao_pagamento == "antecipado" %}Cliente paga antecipado, retira aos poucos
+                    {% else %}Cliente paga conforme retira{% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% if pd.comprovantes %}
+            <div class="field2" style="grid-column:1/3;"><label>Comprovante{{ "s" if pd.comprovantes|length > 1 }} de pagamento</label>
+                <div class="valor comprovantes-lista">
+                    {% for c in pd.comprovantes %}
+                    <span class="comprovante-item">
+                        <a href="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/comprovante/{{ c.id }}" target="_blank"><i data-lucide="paperclip"></i>{{ c.criado_em.strftime("%d/%m/%Y %H:%M") }}{{ " · " ~ c.autor if c.autor }}</a>
+                        {% if c.status == "confirmado" %}<span class="log-badge green" title="{{ c.conferido_em.strftime('%d/%m/%Y %H:%M') }}">confirmado por {{ c.conferido_por }}</span>
+                        {% elif c.status == "recusado" %}<span class="log-badge red" title="{{ c.motivo_recusa }}">recusado</span>
+                        {% else %}<span class="log-badge blue">em conferência</span>{% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if pd.data_limite_retirada %}
+            <div class="field2"><label>Prazo pra retirar</label>
+                <div class="valor">
+                    {{ pd.data_limite_retirada.strftime("%d/%m/%Y") }}
+                    {% if pd.status == "aberto" %}
+                        {% if pd.vencido() %}<span class="badge-vencido">VENCIDO</span>
+                        {% else %}({{ pd.dias_restantes() }} dia{{ "s" if pd.dias_restantes() != 1 }}){% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             {% if pd.status == "cancelado" %}<div class="field2" style="grid-column:1/3;"><label>Motivo do cancelamento</label><div class="valor">{{ pd.motivo_cancelamento }}</div></div>{% endif %}
         </div>
 
-        {% if pd.status == "aberto" %}
-        <div class="btn-row">
-            <button type="button" class="btn-gold" onclick="alternar('renegociar-{{ pd.id }}')">Renegociar pedido</button>
-            <button type="button" class="btn-red" onclick="alternar('cancelar-{{ pd.id }}')">Cancelar pedido</button>
+        <div style="margin-bottom:12px;">
+            <label style="font-size:0.72rem; color:var(--ink-soft);">Retirado / faturado do pedido</label>
+            {% set volume_disponivel = pd.volume_total_a_entregar() %}
+            {% if pd.volume_retirado is not none %}
+            {% set pct = (pd.volume_retirado / volume_disponivel * 100) if volume_disponivel else 0 %}
+            <div class="pedido-progresso">
+                <div class="pedido-progresso-fill" style="width:{{ [pct, 100]|min }}%;"></div>
+            </div>
+            <div class="valor" style="font-size:0.78rem; margin-top:3px;">{{ pd.volume_retirado|numbr(1) }} t de {{ volume_disponivel|numbr(1) }} t ({{ pct|numbr(0) }}%)</div>
+            {% else %}
+            <div class="valor" style="font-size:0.85rem;">Ainda não sincronizado (virá do NetSuite)</div>
+            {% endif %}
+            {% if pd.saldo_credito_valor %}
+            <div style="margin-top:6px;"><span class="log-badge gold">Crédito do cliente: R$ {{ pd.saldo_credito_valor|numbr(2) }} (equivalia a {{ pd.saldo_credito|numbr(1) }} t neste preço)</span></div>
+            {% endif %}
         </div>
-        <div id="renegociar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
-            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/renegociar">
+
+        {% if cliente.entrega_em_outro_lugar() and not pd.destinos_finais and pd.status != "cancelado" %}
+        <div class="campo-aviso aviso-similar ativo" style="margin-bottom:10px;">
+            <b>Falta o destino final.</b> O produto não é entregue no endereço de {{ cliente.fazenda }}: registre em "Destino final"
+            para quais fazendas ele vai. Até lá a Logística vê este pedido sem local de entrega.
+        </div>
+        {% endif %}
+        {% if pd.destinos_finais %}
+        {% set pendente_destino = pd.volume_destino_pendente() %}
+        <div class="destino-final-box">
+            <label style="font-size:0.72rem; color:var(--ink-soft);">Destino final do produto (faturado pra {{ cliente.fazenda }})</label>
+            <ul>
+                {% for d in pd.destinos_finais %}
+                <li>
+                    {% if user.role != "vendedor" or d.cliente_final.vendedor_nome == user.vendedor_nome or cliente.vendedor_nome == user.vendedor_nome %}
+                    <a href="/crm/cliente/{{ d.cliente_final_id }}?aba=pedidos">{{ d.cliente_final.fazenda }}</a>
+                    {% else %}{{ d.cliente_final.fazenda }}{% endif %}
+                    — <strong>{{ d.volume|numbr(1) }} t</strong>
+                    <span class="destino-final-meta">· {{ d.criado_em.strftime("%d/%m/%Y") }}{{ " · " ~ d.autor if d.autor }}{{ " · carteira de " ~ d.cliente_final.vendedor_nome if d.cliente_final.vendedor_nome and d.cliente_final.vendedor_nome != cliente.vendedor_nome }}</span>
+                    {% if d.observacoes %}<div class="destino-final-meta">{{ d.observacoes }}</div>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            <div class="destino-final-meta" style="margin-top:4px;">
+                {% if pendente_destino > 0.009 %}{{ pendente_destino|numbr(1) }} t ainda sem destino identificado.
+                {% else %}Todo o volume deste pedido tem destino identificado.{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="btn-row">
+            <button type="button" class="btn-secondary" onclick="alternar('info-pedido-{{ pd.id }}', this)">Informações do pedido</button>
+            {% if pd.status != "cancelado" and pd.volume_destino_pendente() > 0.009 and not acesso_limitado %}
+            <button type="button" class="btn-secondary" onclick="alternar('destino-{{ pd.id }}', this)">Destino final</button>
+            {% endif %}
+            {% if pd.status == "aberto" and not acesso_limitado %}
+            {% if pd.situacao_pagamento() in ("em_conferencia", "liberado") and user.role in ("admin", "vendedor") %}
+            <button type="button" class="btn-secondary" onclick="alternar('comprovante-extra-{{ pd.id }}', this)">Anexar outro comprovante</button>
+            {% endif %}
+            <button type="button" class="btn-gold" onclick="alternar('renegociar-{{ pd.id }}', this)">Renegociar pedido</button>
+            {# Finalizar so depois do pagamento comprovado: sem ele nao houve carregamento #}
+            {% if not pd.aguardando_pagamento() %}
+            <button type="button" onclick="alternar('finalizar-{{ pd.id }}', this)">Finalizar pedido</button>
+            {% endif %}
+            <button type="button" class="btn-red" onclick="alternar('cancelar-{{ pd.id }}', this)">Cancelar pedido</button>
+            {% endif %}
+        </div>
+        {% if pd.situacao_pagamento() in ("em_conferencia", "liberado") and not acesso_limitado and user.role in ("admin", "vendedor") %}
+        <div id="comprovante-extra-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <p style="font-size:0.82rem; color:var(--ink-soft); margin:0 0 8px;">
+                Para quando o cliente pagou em mais de uma transferência ou pagou uma diferença.
+            </p>
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/comprovante" enctype="multipart/form-data" class="pagamento-bloqueio-form">
+                <input type="file" name="comprovante" accept=".pdf,.jpg,.jpeg,.png" required>
+                <button type="submit"><i data-lucide="upload"></i> Enviar comprovante</button>
+            </form>
+        </div>
+        {% endif %}
+        <div id="info-pedido-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <h4 style="margin:0 0 8px; font-size:0.85rem;">Carregamentos deste pedido</h4>
+            <p style="color:var(--ink-soft); font-size:0.82rem;">
+                Nenhum carregamento individual registrado ainda — essa informação (data e volume de cada
+                retirada) virá automaticamente do NetSuite quando a integração estiver pronta.
+            </p>
+        </div>
+
+        {% if pd.status != "cancelado" and pd.volume_destino_pendente() > 0.009 %}
+        <div id="destino-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <p class="aviso-dados-exemplo" style="font-size:0.78rem; margin-bottom:8px;">
+                Use quando este pedido foi faturado pra um parceiro, transportadora ou consultor, mas o produto
+                vai pra fazenda de um cliente nosso. A nota continua sendo de {{ cliente.fazenda }} — aqui só
+                registramos pra onde o produto foi. Pode registrar aos poucos, conforme for sabendo.
+            </p>
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/destino-final">
+                <input type="hidden" name="cliente_final_id" id="destino-id-{{ pd.id }}">
                 <div class="ficha-grid" style="margin-bottom:8px;">
-                    <div class="field2"><label>Preco (R$/t)</label><input type="number" step="0.01" id="preco_reneg-{{ pd.id }}" name="preco" value="{{ pd.preco }}" oninput="atualizarTotal('reneg-{{ pd.id }}')" required></div>
+                    <div class="field2" style="grid-column:1/3;">
+                        <label>Cliente final (quem recebeu o produto)</label>
+                        <div style="position:relative;">
+                            <input type="text" id="destino-busca-{{ pd.id }}" autocomplete="off"
+                                   placeholder="Nome da fazenda, proprietário ou empresa..." oninput="buscarDestino({{ pd.id }})">
+                            <div id="destino-sugestoes-{{ pd.id }}" class="autocomplete-lista destino-sugestoes"></div>
+                        </div>
+                        <div id="destino-aviso-{{ pd.id }}" class="campo-aviso aviso-similar"></div>
+                        <p style="font-size:0.72rem; color:var(--ink-soft); margin:4px 0 0;">
+                            Não achou? <a href="/crm/cliente/novo" target="_blank">Cadastre o cliente numa nova aba</a> e depois busque ele aqui.
+                        </p>
+                    </div>
+                    <div class="field2"><label>Volume (t)</label>
+                        <input type="number" step="0.01" min="0.01" max="{{ pd.volume_destino_pendente()|round(2) }}" name="volume"
+                               placeholder="até {{ pd.volume_destino_pendente()|numbr(1) }} t" required>
+                    </div>
+                    <div class="field2"><label>Observações</label><input type="text" name="observacoes" placeholder="(opcional)"></div>
+                </div>
+                <button type="submit">Registrar destino</button>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if pd.status == "aberto" %}
+        <div id="renegociar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/renegociar" data-guiado>
+                <div class="ficha-grid" style="margin-bottom:8px;">
+                    <div class="field2"><label>Preço (R$/t)</label><input type="number" step="0.01" id="preco_reneg-{{ pd.id }}" name="preco" value="{{ pd.preco }}" oninput="atualizarTotal('reneg-{{ pd.id }}')" required></div>
                     <div class="field2"><label>Volume (t)</label><input type="number" step="0.01" id="vol_reneg-{{ pd.id }}" name="volume" value="{{ pd.volume }}" oninput="atualizarTotal('reneg-{{ pd.id }}')" required></div>
                     <div class="field2"><label>Valor total</label><div class="valor" id="total_reneg-{{ pd.id }}">R$ {{ pd.valor_total()|numbr(2) }}</div></div>
                     <div class="field2"><label>Pagamento</label>
-                        <select name="pagamento" required>
+                        <select name="pagamento" id="pagamento_reneg-{{ pd.id }}" onchange="atualizarCamposPagamento('reneg-{{ pd.id }}')" required>
                             <option value="A vista" {% if pd.pagamento == "A vista" %}selected{% endif %}>A vista</option>
                             <option value="A prazo" {% if pd.pagamento == "A prazo" %}selected{% endif %}>A prazo</option>
+                            <option value="Plano safra" {% if pd.pagamento == "Plano safra" %}selected{% endif %}>Plano safra</option>
                         </select>
                     </div>
-                    <div class="field2"><label>Prazo (se a prazo)</label><input type="text" name="prazo" value="{{ pd.prazo or '' }}"></div>
+                    <div class="field2" id="campo-prazo-reneg-{{ pd.id }}"><label>Prazo</label><input type="text" name="prazo" value="{{ pd.prazo or '' }}"></div>
+                    <div class="field2" id="campo-modalidade-reneg-{{ pd.id }}"><label>Modalidade do plano safra</label>
+                        <select name="plano_safra_modalidade" id="modalidade_reneg-{{ pd.id }}" onchange="atualizarCamposPagamento('reneg-{{ pd.id }}')">
+                            <option value="">Selecione...</option>
+                            {% for valor, label in plano_safra_modalidades.items() %}
+                            <option value="{{ valor }}" {% if pd.plano_safra_modalidade == valor %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field2" id="campo-parceiro-reneg-{{ pd.id }}"><label>Parceiro da cessão</label>
+                        <select name="plano_safra_parceiro" onchange="if (this.value === '__novo__') abrirCadastroParceiro(this);">
+                            <option value="">Selecione...</option>
+                            {% for parc in parceiros_cadastrados %}
+                            <option value="{{ parc.nome }}" {% if pd.plano_safra_parceiro == parc.nome %}selected{% endif %}>{{ parc.nome }}{{ ' — sem CNPJ' if not parc.cnpj }}</option>
+                            {% endfor %}
+                            <option value="__novo__">+ Cadastrar parceiro</option>
+                                </select>
+                                <div class="parceiro-novo" hidden></div>
+                    </div>
                 </div>
-                <button type="submit" class="btn-gold">Confirmar renegociacao</button>
+                <button type="submit" class="btn-gold">Confirmar renegociação</button>
             </form>
         </div>
+        {% if not pd.aguardando_pagamento() %}
+        <div id="finalizar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
+            <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/finalizar">
+                <div class="field2" style="margin-bottom:8px; max-width:220px;">
+                    <label>Volume efetivamente retirado (t)</label>
+                    <input type="number" step="0.01" min="0" name="volume_retirado" value="{{ pd.volume_total_a_entregar() }}" max="{{ pd.volume_total_a_entregar() }}" required>
+                </div>
+                {% if pd.credito_aplicado_valor %}
+                <p class="aviso-dados-exemplo" style="font-size:0.78rem; margin-bottom:8px;">
+                    Este pedido inclui {{ pd.toneladas_credito_aplicado()|numbr(1) }} t de crédito já pago antes (R$
+                    {{ pd.credito_aplicado_valor|numbr(2) }}) — total disponível pra retirar: {{ pd.volume_total_a_entregar()|numbr(1) }} t.
+                    Se não retirar tudo, a parte do crédito nunca se perde (vira crédito de novo), só a parte
+                    recém-contratada segue a regra abaixo.
+                </p>
+                {% endif %}
+                {% if pd.condicao_pagamento == "antecipado" %}
+                <p class="aviso-dados-exemplo" style="font-size:0.78rem; margin-bottom:8px;">
+                    Esse cliente pagou o total antecipado. Se retirar menos que o contratado, a diferença fica
+                    registrada como crédito do cliente pra usar numa próxima negociação.
+                </p>
+                {% else %}
+                <p class="aviso-dados-exemplo" style="font-size:0.78rem; margin-bottom:8px;">
+                    {% if pd.condicao_pagamento == "por_retirada" %}Esse cliente paga conforme retira. {% endif %}
+                    Se retirar menos que o contratado, o volume/valor oficial deste pedido vira o que foi
+                    efetivamente retirado, sem crédito — não ficamos devendo nada a mais pra esse cliente.
+                </p>
+                {% endif %}
+                <button type="submit">Confirmar finalização</button>
+            </form>
+        </div>
+        {% endif %}
         <div id="cancelar-{{ pd.id }}" style="display:none; margin-top:12px; border-top:1px dashed var(--line); padding-top:12px;">
             <form method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ pd.id }}/cancelar">
                 <div class="field2" style="margin-bottom:8px;">
@@ -201,133 +1139,388 @@
                     <input type="text" name="motivo" required>
                 </div>
                 <p style="font-size:0.78rem; color:var(--red); margin:0 0 8px;">
-                    Essa acao nao pode ser desfeita — sera preciso fazer uma proposta nova para uma nova venda.
+                    Essa ação não pode ser desfeita — será preciso fazer uma proposta nova para uma nova venda.
                 </p>
                 <button type="submit" class="btn-red">Sim, cancelar definitivamente</button>
             </form>
         </div>
         {% endif %}
-    </div>
+        </div>
+    </details>
     {% else %}
+    {% if not recebimentos %}
     <p style="color:var(--ink-soft); font-size:0.85rem;">Nenhum pedido gerado ainda para este cliente.</p>
+    {% endif %}
+    {% endfor %}
+
+    {# Produto que chegou via transportadora/consultor/parceiro: o pedido e do comprador (nota e pagamento dele), aqui so a parte que veio pra este cliente. #}
+    {% for d in recebimentos %}
+    {% set pp = d.pedido %}
+    {% set comprador = pp.cliente %}
+    {% set canal = "transportadora" if comprador.e_transportadora else ("consultor" if comprador.e_consultor else "parceiro") %}
+    {% set pode_abrir_comprador = user.role != "vendedor" or comprador.vendedor_nome == user.vendedor_nome %}
+    <div class="produto-card produto-card-indireto">
+        <h3>{{ pp.produto }} — pedido {{ pp.codigo }}
+            {% if pp.status == "aberto" %}<span class="log-badge green">ativo</span>
+            {% elif pp.status == "finalizado" %}<span class="log-badge mineral">finalizado</span>
+            {% else %}<span class="log-badge red">cancelado</span>{% endif %}
+            <span class="log-badge clay">via {{ canal }}</span>
+        </h3>
+        <div class="ficha-grid" style="margin-bottom:8px;">
+            <div class="field2"><label>Volume pra este cliente</label><div class="valor">{{ d.volume|numbr(1) }} t</div></div>
+            <div class="field2"><label>Volume total do pedido</label><div class="valor">{{ pp.volume|numbr(1) }} t</div></div>
+            <div class="field2" style="grid-column:1/3;"><label>Comprado por ({{ canal }})</label>
+                <div class="valor">
+                    {% if pode_abrir_comprador %}<a href="/crm/cliente/{{ comprador.id }}?aba=pedidos">{{ comprador.fazenda }}</a>{% else %}{{ comprador.fazenda }}{% endif %}
+                    {% if comprador.vendedor_nome and comprador.vendedor_nome != cliente.vendedor_nome %}<span class="destino-final-meta">· carteira de {{ comprador.vendedor_nome }}</span>{% endif %}
+                </div>
+            </div>
+            <div class="field2"><label>Registrado em</label><div class="valor">{{ d.criado_em.strftime("%d/%m/%Y") }}{{ " · " ~ d.autor if d.autor }}</div></div>
+            {% if pp.data_limite_retirada %}
+            <div class="field2"><label>Prazo pra retirar</label><div class="valor">{{ pp.data_limite_retirada.strftime("%d/%m/%Y") }}</div></div>
+            {% endif %}
+            {% if d.observacoes %}<div class="field2" style="grid-column:1/3;"><label>Observações</label><div class="valor">{{ d.observacoes }}</div></div>{% endif %}
+            {% if pp.status == "cancelado" %}<div class="field2" style="grid-column:1/3;"><label>Motivo do cancelamento</label><div class="valor">{{ pp.motivo_cancelamento }}</div></div>{% endif %}
+        </div>
+        <p class="destino-final-meta" style="margin:0;">
+            Nota e pagamento ficam com {{ comprador.fazenda }} — renegociar, finalizar ou cancelar é feito no pedido dele.
+            {% if pp.status != "cancelado" %}O pós-venda é feito direto com este cliente.{% endif %}
+        </p>
+    </div>
     {% endfor %}
 </div>
 
-<div id="aba-comentario" class="aba {{ 'aba-ativa' if aba_inicial == 'comentario' }}">
-    <div class="ficha-cliente">
-        <div class="card">
-            <h2 style="margin-top:0; margin-bottom:1rem;">Registrar contato</h2>
-            <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
-                <div class="field2" style="margin-bottom:10px;">
-                    <label>O que aconteceu?</label>
-                    <select name="resultado">
-                        {% for valor, label in resultados.items() %}
-                        <option value="{{ valor }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="field2" style="margin-bottom:10px;">
-                    <label>Teor da conversa</label>
-                    <textarea name="texto" rows="3" placeholder="O que foi conversado com o cliente..." required></textarea>
-                </div>
-                <div class="field2" style="margin-bottom:10px;">
-                    <label>Agendar novo contato para (opcional — entra na agenda)</label>
-                    <input type="date" name="proximo_retorno">
-                </div>
-                <button type="submit">Salvar contato</button>
-            </form>
-
-            <div style="margin-top:1.3rem; padding-top:1rem; border-top:1px dashed var(--line);">
-                <h3 style="font-size:0.9rem; margin:0 0 8px;">Finalizar cliente — nao vai seguir na negociacao</h3>
-                <div class="btn-row" style="margin-top:0;">
-                    <button type="button" class="btn-secondary" onclick="alternar('finalizar-nao-usara')">Nao usara</button>
-                    <button type="button" class="btn-red" onclick="alternar('finalizar-perdido')">Perdido</button>
-                </div>
-                <div id="finalizar-nao-usara" style="display:none; margin-top:10px;">
-                    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
-                        <input type="hidden" name="resultado" value="sem_interesse">
-                        <div class="field2" style="margin-bottom:8px;"><label>Motivo</label><textarea name="texto" rows="2" required></textarea></div>
-                        <button type="submit" class="btn-secondary">Confirmar: nao usara</button>
-                    </form>
-                </div>
-                <div id="finalizar-perdido" style="display:none; margin-top:10px;">
-                    <form method="post" action="/crm/cliente/{{ cliente.id }}/nota">
-                        <input type="hidden" name="resultado" value="perdido">
-                        <div class="field2" style="margin-bottom:8px;"><label>Motivo</label><textarea name="texto" rows="2" required></textarea></div>
-                        <button type="submit" class="btn-red">Confirmar: perdido</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2 style="margin-top:0; margin-bottom:1rem;">Historico</h2>
-            <ul class="timeline">
-                {% for h in historico %}
-                {% if h.tipo in ("proposta", "pedido", "pedido_cancelado") and h.numero %}
-                <li class="tl-item {{ 'tl-proposta' if h.tipo == 'proposta' else ('tl-pedido-cancelado' if h.tipo == 'pedido_cancelado' else 'tl-pedido') }}">
-                    <div style="width:100%;">
-                        <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }}</span>
-                        <div class="tl-registro-head">
-                            {% if h.tipo == "proposta" %}<span class="log-badge blue">Proposta no {{ h.numero }}</span>
-                            {% elif h.tipo == "pedido" %}<span class="log-badge green">Venda realizada — pedido no {{ h.numero }}</span>
-                            {% else %}<span class="log-badge red">Pedido cancelado — no {{ h.numero }}</span>{% endif %}
-                            <strong>{{ h.produto }}</strong>
-                        </div>
-                        <div class="tl-registro-grid">
-                            <span>Volume: {{ h.volume|numbr(1) }} t</span>
-                            <span>Preco: R$ {{ h.preco|numbr(2) }}/t</span>
-                            <span>Valor total: R$ {{ (h.volume * h.preco)|numbr(2) }}</span>
-                            <span>Pagamento: {{ h.pagamento or "-" }}</span>
-                        </div>
-                        <div class="tl-text" style="margin-top:6px;">{{ h.texto }}</div>
-                    </div>
-                </li>
-                {% else %}
-                <li class="tl-item {% if h.tipo == 'mudanca_fase' %}tl-fase{% elif h.tipo == 'agenda' %}tl-agenda{% endif %}">
-                    <div>
-                        <span class="tl-date">{{ h.data.strftime("%d/%m/%Y %H:%M") }}</span>
-                        <div class="tl-text">{{ h.texto }}</div>
-                    </div>
-                </li>
-                {% endif %}
-                {% else %}
-                <li style="color:var(--ink-soft); font-size:0.85rem;">Sem historico ainda.</li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
-</div>
-
 <script>
-function alternar(id){
+function alternar(id, botao){
     var el = document.getElementById(id);
-    el.style.display = (el.style.display === "none" || !el.style.display) ? "block" : "none";
+    var vaiAbrir = (el.style.display === "none" || !el.style.display);
+    // Fecha os outros paineis que abrem junto desse mesmo botao (mesmo
+    // container pai) pra nao empilhar varios formularios abertos ao mesmo
+    // tempo -- so mostra o do ultimo botao clicado.
+    if (vaiAbrir && botao && botao.parentElement) {
+        botao.parentElement.querySelectorAll('[onclick*="alternar("]').forEach(function (outroBotao) {
+            if (outroBotao === botao) return;
+            var m = outroBotao.getAttribute("onclick").match(/alternar\('([^']+)'/);
+            if (m) {
+                var outroEl = document.getElementById(m[1]);
+                if (outroEl) outroEl.style.display = "none";
+            }
+        });
+    }
+    el.style.display = vaiAbrir ? "block" : "none";
+    if (vaiAbrir) {
+        // lista suspensa (multiselect) so precisa ficar visivel; formulario leva o usuario ate ele
+        if (el.classList.contains("multiselect-panel")) el.scrollIntoView({block: "nearest", behavior: "smooth"});
+        else levarAte(el);
+    }
+}
+function atualizarLabelMultiselect(panelId, labelId, textoVazio){
+    var marcados = document.querySelectorAll("#" + panelId + " input[type=checkbox]:checked");
+    var label = document.getElementById(labelId);
+    if (marcados.length === 0) { label.textContent = textoVazio; return; }
+    label.textContent = Array.from(marcados).map(function (c) { return c.value; }).join(", ");
 }
 function mostrarAba(nome){
+    var ehAcao = (nome === "comentario" || nome === "propostas");
+    var topo = ehAcao ? "acoes" : nome;
+
     document.querySelectorAll(".aba").forEach(function (el) { el.classList.remove("aba-ativa"); });
+    document.getElementById("aba-" + topo).classList.add("aba-ativa");
+
     document.querySelectorAll(".tab-btn").forEach(function (el) { el.classList.remove("active"); });
-    document.getElementById("aba-" + nome).classList.add("aba-ativa");
-    document.getElementById("tab-" + nome).classList.add("active");
+    var botao = document.getElementById("tab-" + nome);
+    if (botao) botao.classList.add("active");
+
+    if (ehAcao) {
+        document.querySelectorAll(".secao-acao").forEach(function (el) { el.classList.remove("secao-ativa"); });
+        document.getElementById("secao-" + nome).classList.add("secao-ativa");
+    }
+
     if (window.history && window.history.replaceState) {
         var url = new URL(window.location);
         url.searchParams.set("aba", nome);
         window.history.replaceState({}, "", url);
+    }
+    // Conteudo da aba abaixo da dobra (celular, "Resolver agora" no topo): sobe ate as abas
+    var abas = document.querySelector(".tabs-bar");
+    if (abas && abas.getBoundingClientRect().top > window.innerHeight * 0.35) {
+        levarAte(abas, {focar: false, destacar: false});
+    }
+}
+// Caminho da venda: leva ate o formulario certo, abrindo a aba se precisar
+function irPara(aba, id){
+    mostrarAba(aba);
+    var el = id ? document.getElementById(id) : null;
+    if (!el) return;
+    // Pedido compacto: abre o cartao antes de mostrar o formulario de dentro dele
+    var cartao = el.closest("details");
+    if (cartao) cartao.open = true;
+    if (el.style.display === "none") el.style.display = "block";
+    levarAte(el);
+}
+// Gerar pedido abre dentro da etapa Pedido do caminho da venda (nao e mais
+// pagina separada); de qualquer botao "Gerar pedido" a tela vai ate la
+function abrirGerarPedido(propostaId){
+    var el = document.getElementById("gp-" + propostaId);
+    if (!el) return;
+    el.style.display = "block";
+    levarAte(el, {focar: false});
+    // ja aponta o primeiro passo do formulario (formulario guiado, base.html)
+    var form = el.querySelector("form[data-guiado]");
+    if (form) setTimeout(function () { guiarProximo(form, null); }, 350);
+}
+document.addEventListener("DOMContentLoaded", function () {
+    var url = new URL(window.location);
+    var alvo = {{ ("gp-" ~ gerar_pedido_aberto)|tojson if gerar_pedido_aberto else "null" }} || url.searchParams.get("abrir");
+    if (alvo && /^gp-\d+$/.test(alvo)) abrirGerarPedido(alvo.slice(3));
+    if (url.searchParams.has("abrir")) {
+        url.searchParams.delete("abrir");
+        window.history.replaceState({}, "", url);
+    }
+});
+function editarPropostaDoHistorico(propostaId){
+    mostrarAba("propostas");
+    var el = document.getElementById("editar-proposta-" + propostaId);
+    if (el) {
+        el.style.display = "block";
+        levarAte(el, {bloco: "center"});
     }
 }
 function fmtBRL(v){
     if (!isFinite(v)) v = 0;
     return v.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
-function atualizarTotal(prefixo){
-    var volEl = document.getElementById("vol_" + prefixo);
+// Se o checkbox "usar credito" desse prefixo estiver marcado e o produto
+// tiver credito, o campo Volume passa a significar o TOTAL que o cliente vai
+// receber -- a parte nova (cobrada) e o total menos as toneladas de credito.
+// Retorna {usando, creditoTon, volumeNovo} pra quem precisar (atualizarTotal).
+function _creditoSplit(prefixo, produtoFixo){
+    var usarChk = document.getElementById("usar_credito_" + prefixo);
+    var produtoEl = document.getElementById("produto_" + prefixo);
+    var produto = produtoFixo || (usarChk && usarChk.dataset.produto) || (produtoEl ? produtoEl.value : "");
     var precoEl = document.getElementById("preco_" + prefixo);
-    var totalEl = document.getElementById("total_" + prefixo);
-    if (!volEl || !precoEl || !totalEl) return;
-    var vol = parseFloat(volEl.value) || 0;
-    var preco = parseFloat(precoEl.value) || 0;
-    totalEl.textContent = "R$ " + fmtBRL(vol * preco);
+    var volEl = document.getElementById("vol_" + prefixo);
+    var credito = CREDITOS_POR_PRODUTO[produto] || 0;
+    var preco = precoEl ? parseFloat(precoEl.value) : NaN;
+    var creditoTon = (credito > 0 && preco > 0) ? (credito / preco) : 0;
+    var usando = !!(usarChk && usarChk.checked && creditoTon > 0);
+    var volInformado = volEl ? (parseFloat(volEl.value) || 0) : 0;
+    var volumeNovo = usando ? Math.max(0, volInformado - creditoTon) : volInformado;
+    return {usando: usando, creditoTon: creditoTon, credito: credito, volumeNovo: volumeNovo, preco: preco || 0};
 }
+function atualizarTotal(prefixo){
+    var totalEl = document.getElementById("total_" + prefixo);
+    if (!totalEl) return;
+    var s = _creditoSplit(prefixo);
+    totalEl.textContent = "R$ " + fmtBRL(s.volumeNovo * s.preco);
+}
+
+var CREDITOS_POR_PRODUTO = {{ creditos_por_produto|tojson }};
+// prefixo: "novo" (produto muda via select) ou "editar-<id>" (produto fixo,
+// passado em produtoFixo -- editar proposta nao deixa trocar de produto).
+function atualizarCreditoInfo(prefixo, produtoFixo){
+    var produtoEl = document.getElementById("produto_" + prefixo);
+    var produto = produtoFixo || (produtoEl ? produtoEl.value : "");
+    var precoEl = document.getElementById("preco_" + prefixo);
+    var info = document.getElementById("credito-info-" + prefixo);
+    var usarBox = document.getElementById("credito-usar-" + prefixo);
+    var volLabel = document.getElementById("vol_label_" + prefixo);
+    var splitInfo = document.getElementById("credito-split-" + prefixo);
+    if (!info) return;
+    var credito = CREDITOS_POR_PRODUTO[produto];
+    if (!credito) {
+        info.classList.remove("ativo");
+        if (usarBox) usarBox.classList.remove("ativo");
+        if (volLabel) volLabel.textContent = "Volume (t)";
+        if (splitInfo) splitInfo.classList.remove("ativo");
+        atualizarTotal(prefixo);
+        return;
+    }
+    var texto = "Crédito disponível pra esse produto: R$ " + fmtBRL(credito);
+    var preco = precoEl ? parseFloat(precoEl.value) : NaN;
+    if (preco > 0) {
+        var toneladas = credito / preco;
+        texto += " — ao preço informado, equivale a " + toneladas.toLocaleString("pt-BR", {maximumFractionDigits: 1}) + " t.";
+    } else {
+        texto += ". Informe o preco pra ver quantas toneladas isso equivale hoje.";
+    }
+    info.textContent = texto;
+    info.classList.add("ativo");
+    if (usarBox) usarBox.classList.add("ativo");
+
+    var s = _creditoSplit(prefixo, produtoFixo);
+    if (volLabel) volLabel.textContent = s.usando ? "Volume TOTAL a entregar (t)" : "Volume (t)";
+    if (splitInfo) {
+        if (s.usando) {
+            splitInfo.textContent = "Desse total, " + s.creditoTon.toLocaleString("pt-BR", {maximumFractionDigits: 1}) +
+                " t (R$ " + fmtBRL(s.credito) + ") já estão pagas (crédito) — volume novo a cobrar: " +
+                s.volumeNovo.toLocaleString("pt-BR", {maximumFractionDigits: 1}) + " t.";
+            splitInfo.classList.add("ativo");
+        } else {
+            splitInfo.classList.remove("ativo");
+        }
+    }
+    atualizarTotal(prefixo);
+}
+// Inicializa o hint/checkbox de credito de cada proposta ja aberta em
+// edicao (produto fixo, preco ja preenchido) assim que a pagina carrega.
+{% for p in propostas_abertas %}
+atualizarCreditoInfo('editar-{{ p.id }}', '{{ p.produto }}');
+{% endfor %}
+
+// So mostra Prazo/Modalidade/Parceiro quando fazem sentido pro pagamento
+// escolhido -- pedido do Rafael (2026-09-25): "a ficha de proposta permanece
+// como era antes" quando for a vista, sem abrir campo nenhum a mais.
+var VENDEDOR_DO_COMPRADOR = {{ cliente.vendedor_nome|tojson }};
+var _destinoTimers = {};
+function buscarDestino(pedidoId) {
+    var input = document.getElementById("destino-busca-" + pedidoId);
+    var lista = document.getElementById("destino-sugestoes-" + pedidoId);
+    var aviso = document.getElementById("destino-aviso-" + pedidoId);
+    var idEl = document.getElementById("destino-id-" + pedidoId);
+    idEl.value = "";
+    aviso.classList.remove("ativo");
+    var termo = input.value.trim();
+    clearTimeout(_destinoTimers[pedidoId]);
+    if (termo.length < 2) { lista.innerHTML = ""; lista.classList.remove("show"); return; }
+    _destinoTimers[pedidoId] = setTimeout(function () {
+        fetch("/api/busca-cliente-destino?q=" + encodeURIComponent(termo))
+            .then(function (r) { return r.json(); })
+            .then(function (itens) {
+                lista.innerHTML = "";
+                if (!itens.length) {
+                    var vazio = document.createElement("div");
+                    vazio.className = "autocomplete-item";
+                    vazio.style.cursor = "default";
+                    vazio.textContent = "Nenhum cliente encontrado — cadastre numa nova aba.";
+                    lista.appendChild(vazio);
+                }
+                itens.forEach(function (item) {
+                    var div = document.createElement("div");
+                    div.className = "autocomplete-item";
+                    div.textContent = item.label + (item.vendedor ? " (" + item.vendedor + ")" : "");
+                    div.addEventListener("click", function () {
+                        input.value = item.label;
+                        idEl.value = item.id;
+                        lista.innerHTML = "";
+                        lista.classList.remove("show");
+                        if (item.vendedor && item.vendedor !== VENDEDOR_DO_COMPRADOR) {
+                            aviso.textContent = "Atenção: esse cliente é da carteira de " + item.vendedor +
+                                ". Vale avisar — ele pode estar cotando com a gente direto e via parceiro ao mesmo tempo.";
+                            aviso.classList.add("ativo");
+                        }
+                    });
+                    lista.appendChild(div);
+                });
+                lista.classList.add("show");
+            });
+    }, 250);
+}
+document.addEventListener("click", function (ev) {
+    if (ev.target.id && ev.target.id.indexOf("destino-busca-") === 0) return;
+    document.querySelectorAll(".destino-sugestoes").forEach(function (l) { l.classList.remove("show"); });
+});
+
+function atualizarCamposPagamento(prefixo) {
+    var pagamentoEl = document.getElementById("pagamento_" + prefixo);
+    var pagamento = pagamentoEl ? pagamentoEl.value : "";
+    var campoPrazo = document.getElementById("campo-prazo-" + prefixo);
+    var campoModalidade = document.getElementById("campo-modalidade-" + prefixo);
+    var campoParceiro = document.getElementById("campo-parceiro-" + prefixo);
+    if (campoPrazo) campoPrazo.style.display = (pagamento === "A prazo") ? "" : "none";
+    if (campoModalidade) campoModalidade.style.display = (pagamento === "Plano safra") ? "" : "none";
+    var modalidadeEl = document.getElementById("modalidade_" + prefixo);
+    var modalidade = modalidadeEl ? modalidadeEl.value : "";
+    if (campoParceiro) campoParceiro.style.display = (pagamento === "Plano safra" && modalidade === "cessao") ? "" : "none";
+    // So o que aparece e obrigatorio (o formulario guiado aponta o proximo obrigatorio)
+    [campoPrazo, campoModalidade, campoParceiro].forEach(function (campo) {
+        if (!campo) return;
+        var el = campo.querySelector("input, select");
+        if (el) el.required = campo.style.display !== "none";
+    });
+}
+// Cadastro rapido do parceiro da cessao sem sair da proposta (Rafael, 2026-10-02):
+// salva por tras (fetch), coloca o parceiro em todas as listas e ja seleciona.
+function abrirCadastroParceiro(select) {
+    var caixa = select.parentElement.querySelector(".parceiro-novo");
+    caixa.innerHTML = '<div class="parceiro-novo-titulo">Cadastrar parceiro da cessão</div>' +
+        '<div class="ficha-grid"><div class="field2"><label>Nome do parceiro *</label><input type="text" class="pn-nome" placeholder="ex.: Agrex"></div>' +
+        '<div class="field2"><label>CNPJ *</label><input type="text" class="pn-cnpj" placeholder="00.000.000/0000-00" inputmode="numeric"></div></div>' +
+        '<p class="pn-erro" hidden></p>' +
+        '<div class="btn-row"><button type="button" class="pn-salvar">Salvar parceiro</button>' +
+        '<button type="button" class="btn-secondary pn-cancelar">Cancelar</button></div>';
+    caixa.hidden = false;
+    select.value = "";
+    // enquanto o cadastro esta aberto, o campo ocupa a linha inteira (cabe nome e CNPJ)
+    var campo = select.closest(".field2");
+    if (campo) campo.style.gridColumn = "1 / -1";
+    var fechar = function () { caixa.hidden = true; caixa.innerHTML = ""; if (campo) campo.style.gridColumn = ""; };
+    var nome = caixa.querySelector(".pn-nome");
+    levarAte(caixa);
+    caixa.querySelector(".pn-cancelar").onclick = function () { fechar(); select.focus(); };
+    nome.onkeydown = caixa.querySelector(".pn-cnpj").onkeydown = function (ev) {
+        if (ev.key === "Enter") { ev.preventDefault(); caixa.querySelector(".pn-salvar").click(); }
+    };
+    caixa.querySelector(".pn-salvar").onclick = function () {
+        var erro = caixa.querySelector(".pn-erro");
+        var cnpj = caixa.querySelector(".pn-cnpj");
+        if (!nome.value.trim() || !cnpj.value.trim()) {
+            erro.textContent = !nome.value.trim() ? "Informe o nome do parceiro." : "Informe o CNPJ do parceiro.";
+            erro.hidden = false;
+            (!nome.value.trim() ? nome : cnpj).focus();
+            return;
+        }
+        var dados = new FormData();
+        dados.append("nome", nome.value);
+        dados.append("cnpj", caixa.querySelector(".pn-cnpj").value);
+        fetch("/crm/parceiros/rapido", {method: "POST", body: dados})
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res.ok) { erro.textContent = res.erro; erro.hidden = false; return; }
+                document.querySelectorAll('select[name="plano_safra_parceiro"]').forEach(function (s) {
+                    var existe = Array.prototype.some.call(s.options, function (o) { return o.value === res.nome; });
+                    if (!existe) s.insertBefore(new Option(res.nome, res.nome), s.querySelector('option[value="__novo__"]'));
+                });
+                select.value = res.nome;
+                fechar();
+                // segue a proposta: o guia aponta o proximo passo
+                select.dispatchEvent(new Event("change", {bubbles: true}));
+            })
+            .catch(function () { erro.textContent = "Não foi possível salvar agora. Tente de novo."; erro.hidden = false; });
+    };
+}
+// Inicializa o estado certo assim que a pagina carrega (proposta/pedido ja
+// existentes podem ja estar em "A prazo" ou "Plano safra" -- os campos
+// certos precisam aparecer sem precisar mexer no select primeiro).
+{% for p in propostas_abertas %}
+atualizarCamposPagamento('editar-{{ p.id }}');
+{% endfor %}
+{% for pd in pedidos %}
+{% if pd.status == "aberto" %}
+atualizarCamposPagamento('reneg-{{ pd.id }}');
+{% endif %}
+{% endfor %}
+
+{% if via %}
+// Veio de uma lista de trabalho (Avisos, Fila...): mantem o ?via= na URL e
+// nos links pras sub-paginas deste cliente, pra o caminho CRM > lista >
+// cliente continuar valendo depois de salvar algo ou editar o cadastro.
+(function () {
+    var via = {{ via|tojson }};
+    var url = new URL(window.location);
+    if (url.searchParams.get("via") !== via) {
+        url.searchParams.set("via", via);
+        window.history.replaceState({}, "", url);
+    }
+    var prefixo = "/crm/cliente/{{ cliente.id }}/";
+    document.querySelectorAll('a[href^="' + prefixo + '"]').forEach(function (a) {
+        var destino = new URL(a.getAttribute("href"), window.location.origin);
+        if (destino.pathname.indexOf("/contrato-cessao") !== -1 || destino.pathname.indexOf("/comprovante/") !== -1) return;
+        destino.searchParams.set("via", via);
+        a.setAttribute("href", destino.pathname + destino.search);
+    });
+})();
+{% endif %}
 </script>
 {% endif %}
 {% endblock %}

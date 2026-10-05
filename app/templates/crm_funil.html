@@ -1,18 +1,29 @@
 {% extends "base.html" %}
-{% block title %}CRM {{ uf }}{% endblock %}
+{% block title %}Carteira {{ uf }}{% endblock %}
 {% block content %}
-<div class="breadcrumb">
-    <a href="/crm">Inicio</a><span class="sep">&rsaquo;</span><span>{{ uf }}</span>
+<div class="pagina-cab">
+    <div>
+        <h1>Carteira · {{ uf }}</h1>
+        <p class="pagina-sub">{{ total }} cliente{{ "s" if total != 1 }}</p>
+    </div>
 </div>
-<h1>Carteira — {{ uf }} <span style="font-family:'Work Sans'; font-size:0.9rem; color:var(--ink-soft); font-weight:400;">{{ total }} clientes</span></h1>
 
-<div class="stats-grid">
-    {% for f in fases %}
-    <a class="stat-card {{ f.cor }}" href="{{ base_url }}/fase/{{ f.chave }}">
-        <span class="num">{{ f.qtd }}</span>
-        <div class="label">{{ f.label }}</div>
-        <div class="pct">{{ "%.1f"|format(f.pct) }}%</div>
-    </a>
-    {% endfor %}
-</div>
+{# Etapas como informacao de apoio (Rafael, 2026-10-02, mesmo padrao da tela
+   inicial): faixa discreta, sem quadros, ainda clicavel -- a lista de clientes
+   abaixo e o principal da tela. #}
+<section class="numeros numeros-etapas" aria-label="Clientes por etapa">
+    <h2 class="numeros-titulo">Clientes por etapa</h2>
+    <div class="numeros-itens numeros-seis">
+        {% for f in fases %}
+        <a class="numeros-item" href="{{ base_url }}/fase/{{ f.chave }}">
+            <span class="numeros-rotulo"><span class="numeros-ponto {{ f.cor or 'ink' }}"></span>{{ f.label }}</span>
+            <span class="numeros-valor">{{ f.qtd }}</span>
+            <span class="numeros-sub">{{ "%.1f"|format(f.pct)|replace(".", ",") }}% da carteira</span>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<h2 class="secao-titulo">Todos os clientes <span class="qtd">{{ clientes|length }}</span></h2>
+{% include "_lista_clientes_tabela.html" %}
 {% endblock %}

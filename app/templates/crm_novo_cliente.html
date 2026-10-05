@@ -1,51 +1,91 @@
 {% extends "base.html" %}
 {% block title %}Novo cliente{% endblock %}
 {% block content %}
-<a class="back-btn" href="{{ '/crm' if user.role != 'vendedor' else '/vendedor/crm/carteira' }}">&lsaquo; Voltar</a>
-<h1>Cadastrar cliente</h1>
+<div class="pagina-cab">
+    <div>
+        <h1>Cadastrar cliente</h1>
+        <p class="pagina-sub">O sistema avisa se já existir cliente com nome, telefone, e-mail ou CNPJ parecido</p>
+    </div>
+</div>
 
-{% if erro %}<div class="erro" style="margin-bottom:1rem; max-width:640px;">{{ erro }}</div>{% endif %}
+{% if erro %}<div class="erro" style="margin-bottom:1rem; max-width:720px;">{{ erro }}</div>{% endif %}
 
 {% if similares %}
-<div class="aviso-dados-exemplo" style="max-width:640px;">
-    Ja existe{{ "m" if similares|length > 1 }} cliente{{ "s" if similares|length > 1 }} com nome parecido
+<div class="aviso-dados-exemplo aviso-alerta" style="max-width:720px;">
+    Já existe{{ "m" if similares|length > 1 }} cliente{{ "s" if similares|length > 1 }} com nome parecido
     {{ "na sua carteira" if form.vendedor else "cadastrado" }}:
     <ul style="margin:6px 0 0; padding-left:1.2rem;">
         {% for s in similares %}
-        <li><a href="/crm/cliente/{{ s.id }}" target="_blank">{{ s.fazenda }}</a> — {{ s.cidade }}, {{ s.uf }} · vendedor: {{ s.vendedor_nome or "-" }}</li>
+        <li><a href="/crm/cliente/{{ s.id }}">{{ s.fazenda }}</a> — {{ s.cidade or "-" }}, {{ s.uf }} · vendedor: {{ s.vendedor_nome or "-" }}</li>
         {% endfor %}
     </ul>
-    <p style="margin:8px 0 0;">Confira se nao e o mesmo cliente antes de cadastrar de novo.</p>
+    <p style="margin:8px 0 0;">Confira se não é o mesmo cliente antes de cadastrar de novo.</p>
 </div>
 {% endif %}
 
-<div class="card" style="max-width:640px;">
+<div class="card" style="max-width:720px;">
     <form method="post" action="/crm/cliente/novo">
         <div class="ficha-grid">
-            <div class="field2" style="grid-column:1/3;"><label>Nome da fazenda / empresa *</label><input type="text" name="fazenda" value="{{ form.fazenda or '' }}" required></div>
-            <div class="field2"><label>Cidade *</label><input type="text" name="cidade" value="{{ form.cidade or '' }}" required></div>
+            <div class="field2" style="grid-column:1/3;">
+                <label>Nome da fazenda / empresa *</label>
+                <input type="text" id="campo-fazenda" name="fazenda" value="{{ form.fazenda or '' }}" autocomplete="off" required>
+                <div id="aviso-fazenda" class="campo-aviso aviso-similar"></div>
+            </div>
             <div class="field2"><label>Estado *</label>
-                <select name="uf" required>
+                <select id="campo-uf" name="uf" onchange="popularCidades()" required>
                     <option value="">Selecione...</option>
                     {% for uf in estados %}
                     <option value="{{ uf }}" {% if form.uf == uf %}selected{% endif %}>{{ uf }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="field2"><label>Proprietario / contato *</label><input type="text" name="proprietario" value="{{ form.proprietario or '' }}" required></div>
-            <div class="field2"><label>Telefone *</label><input type="text" name="telefone" value="{{ form.telefone or '' }}" placeholder="DDD + numero, ex: 86 99945-0475" required></div>
-            <div class="field2"><label>Email</label><input type="text" name="email" value="{{ form.email or '' }}"></div>
-            <div class="field2"><label>CNPJ</label><input type="text" name="cnpj" value="{{ form.cnpj or '' }}"></div>
-            <div class="field2"><label>Empresa</label><input type="text" name="empresa" value="{{ form.empresa or '' }}"></div>
-            <div class="field2"><label>Area plantada (ha)</label><input type="number" step="0.01" name="area_plantada_ha" value="{{ form.area_plantada_ha or '' }}"></div>
-            <div class="field2"><label>Tem frota propria?</label>
-                <select name="frota_propria">
-                    <option value="" {% if not form.frota_propria %}selected{% endif %}>Nao informado</option>
-                    <option value="sim" {% if form.frota_propria == "sim" %}selected{% endif %}>Sim</option>
-                    <option value="nao" {% if form.frota_propria == "nao" %}selected{% endif %}>Nao</option>
+            <div class="field2"><label>Cidade *</label>
+                <select id="campo-cidade" name="cidade" required disabled>
+                    <option value="">Selecione o estado primeiro...</option>
                 </select>
             </div>
-            {% if user.role == "admin" %}
+            <div class="field2">
+                <label>Localidade/região (opcional)</label>
+                <input type="text" name="localidade" value="{{ form.localidade or '' }}" placeholder="ex: Batavo, Rio Coco...">
+            </div>
+            <div class="field2"><label>Proprietário / contato *</label><input type="text" name="proprietario" value="{{ form.proprietario or '' }}" required></div>
+            <div class="field2">
+                <label>Telefone *</label>
+                <input type="text" id="campo-telefone" name="telefone" value="{{ form.telefone or '' }}" placeholder="DDD + número, ex: 86 99999-0000" autocomplete="off" required>
+                <div id="aviso-telefone" class="campo-aviso aviso-dup"></div>
+            </div>
+            <div class="field2">
+                <label>E-mail</label>
+                <input type="text" id="campo-email" name="email" value="{{ form.email or '' }}" autocomplete="off">
+                <div id="aviso-email" class="campo-aviso aviso-dup"></div>
+            </div>
+            <div class="field2">
+                <label>CNPJ</label>
+                <input type="text" id="campo-cnpj" name="cnpj" value="{{ form.cnpj or '' }}" autocomplete="off">
+                <div id="aviso-cnpj" class="campo-aviso aviso-dup"></div>
+            </div>
+            <div class="field2"><label>Empresa</label><input type="text" name="empresa" value="{{ form.empresa or '' }}"></div>
+            <div class="field2"><label>Área plantada (ha)</label><input type="number" step="0.01" name="area_plantada_ha" value="{{ form.area_plantada_ha or '' }}"></div>
+            <div class="field2"><label>Tem frota própria?</label>
+                <select name="frota_propria">
+                    <option value="" {% if not form.frota_propria %}selected{% endif %}>Não informado</option>
+                    <option value="sim" {% if form.frota_propria == "sim" %}selected{% endif %}>Sim</option>
+                    <option value="nao" {% if form.frota_propria == "nao" %}selected{% endif %}>Não</option>
+                </select>
+            </div>
+            <div class="field2" style="grid-column:1/3;">
+                <label>Esse cliente compra como intermediário?</label>
+                <div style="display:flex; gap:18px; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; color:var(--ink);">
+                        <input type="checkbox" name="e_consultor" value="1" style="width:auto;" {% if form.e_consultor %}checked{% endif %}> Consultor
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-weight:normal; color:var(--ink);">
+                        <input type="checkbox" name="e_transportadora" value="1" style="width:auto;" {% if form.e_transportadora %}checked{% endif %}> Transportadora
+                    </label>
+                </div>
+                <p style="font-size:0.72rem; color:var(--ink-soft); margin:4px 0 0;">Nenhuma marcada = produtor.</p>
+            </div>
+            {% if user.role in ("admin", "balcao") %}
             <div class="field2" style="grid-column:1/3;"><label>Vendedor</label>
                 <select name="vendedor">
                     <option value="">Sem vendedor definido</option>
@@ -55,14 +95,7 @@
                 </select>
             </div>
             {% endif %}
-            <div class="field2" style="grid-column:1/3;">
-                <label>Coordenadas da fazenda</label>
-                <div style="display:flex; gap:8px;">
-                    <input type="text" name="coordenadas" id="coordenadas" value="{{ form.coordenadas or '' }}" style="flex:1; width:auto; min-width:0;">
-                    <button type="button" class="btn-secondary" onclick="usarLocalizacaoAtual()" style="white-space:nowrap;">📍 Usar minha localizacao</button>
-                </div>
-                <p style="font-size:0.72rem; color:var(--ink-soft); margin:4px 0 0;">Pelo celular, use isso quando estiver na fazenda pra preencher automaticamente.</p>
-            </div>
+            {% with coord_valor = form.coordenadas %}{% include "_campo_coordenadas.html" %}{% endwith %}
         </div>
         <div class="btn-row">
             <button type="submit">Cadastrar cliente</button>
@@ -71,13 +104,97 @@
     </form>
 </div>
 <script>
-function usarLocalizacaoAtual(){
-    if (!navigator.geolocation) { alert("Geolocalizacao nao esta disponivel neste navegador."); return; }
-    navigator.geolocation.getCurrentPosition(function (pos) {
-        document.getElementById("coordenadas").value = pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6);
-    }, function () {
-        alert("Nao foi possivel obter sua localizacao. Verifique se o navegador tem permissao de GPS.");
-    }, {enableHighAccuracy: true, timeout: 10000});
+var MUNICIPIOS_POR_UF = {{ municipios_por_uf|tojson }};
+
+function popularCidades(){
+    var uf = document.getElementById("campo-uf").value;
+    var select = document.getElementById("campo-cidade");
+    var manterSelecionada = "{{ form.cidade or '' }}";
+    var lista = MUNICIPIOS_POR_UF[uf] || [];
+    if (!uf || lista.length === 0) {
+        select.innerHTML = '<option value="">Selecione o estado primeiro...</option>';
+        select.disabled = true;
+        return;
+    }
+    select.disabled = false;
+    var html = '<option value="">Selecione...</option>';
+    lista.forEach(function (nome) {
+        html += '<option value="' + nome.replace(/"/g, "&quot;") + '"' + (nome === manterSelecionada ? " selected" : "") + '>' + nome + '</option>';
+    });
+    select.innerHTML = html;
 }
+// Restaura a cidade ao voltar com erro de validacao (o estado ja vem selecionado do form).
+if (document.getElementById("campo-uf").value) { popularCidades(); }
+
+function configurarAvisoFazenda(){
+    var input = document.getElementById("campo-fazenda");
+    var aviso = document.getElementById("aviso-fazenda");
+    var timer = null;
+    input.addEventListener("input", function () {
+        clearTimeout(timer);
+        var valor = input.value.trim();
+        if (valor.length < 3) { aviso.classList.remove("ativo"); return; }
+        timer = setTimeout(function () {
+            fetch("/api/busca-crm-clientes?q=" + encodeURIComponent(valor))
+                .then(function (r) { return r.json(); })
+                .then(function (lista) {
+                    if (!lista.length) { aviso.classList.remove("ativo"); return; }
+                    var links = lista.map(function (c) {
+                        return '<a href="/crm/cliente/' + c.id + '">' + c.label + '</a>';
+                    }).join(", ");
+                    aviso.innerHTML = "Já existe(m) cliente(s) com nome parecido: " + links + " — confira se não é o mesmo antes de cadastrar.";
+                    aviso.classList.add("ativo");
+                })
+                .catch(function () {});
+        }, 350);
+    });
+}
+
+function validarFormatoTelefone(valor){
+    var digitos = valor.replace(/\D/g, "");
+    if (digitos.length !== 10 && digitos.length !== 11) {
+        return "Telefone inválido — informe DDD + número (8 dígitos se fixo, 9 se celular).";
+    }
+    if (/^0+$/.test(digitos.slice(2))) {
+        return "Telefone inválido — o número não pode ser uma sequência de zeros.";
+    }
+    return null;
+}
+
+function configurarVerificacaoDuplicado(inputId, campo, avisoId, rotulo, validarFormato){
+    var input = document.getElementById(inputId);
+    var aviso = document.getElementById(avisoId);
+    var timer = null;
+    input.addEventListener("input", function () {
+        clearTimeout(timer);
+        var valor = input.value.trim();
+        if (!valor) { aviso.classList.remove("ativo"); return; }
+        if (validarFormato) {
+            var erroFormato = validarFormato(valor);
+            if (erroFormato) {
+                aviso.textContent = erroFormato;
+                aviso.classList.add("ativo");
+                return;
+            }
+        }
+        timer = setTimeout(function () {
+            fetch("/api/crm-verificar-duplicado?campo=" + campo + "&valor=" + encodeURIComponent(valor))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.existe) { aviso.classList.remove("ativo"); return; }
+                    aviso.innerHTML = "Já existe um cadastro com esse " + rotulo + ": " +
+                        '<a href="/crm/cliente/' + data.cliente_id + '">' + data.cliente_nome + "</a>" +
+                        (data.pessoa ? " (" + data.pessoa + ")" : "") + " — confira antes de continuar.";
+                    aviso.classList.add("ativo");
+                })
+                .catch(function () {});
+        }, 400);
+    });
+}
+
+configurarAvisoFazenda();
+configurarVerificacaoDuplicado("campo-telefone", "telefone", "aviso-telefone", "telefone", validarFormatoTelefone);
+configurarVerificacaoDuplicado("campo-email", "email", "aviso-email", "email");
+configurarVerificacaoDuplicado("campo-cnpj", "cnpj", "aviso-cnpj", "CNPJ/CPF");
 </script>
 {% endblock %}

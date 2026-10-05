@@ -1,15 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Entrar{% endblock %}
 {% block content %}
+{# Entrada (Rafael, 2026-10-05): login + "Esqueci minha senha" (link por e-mail, acessos.py). Login novo so o admin cria. #}
 <div class="login-box">
-    <h1>Portal Calcario Integral</h1>
+    <div class="login-marca"><img class="marca-logo" src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso"></div>
+    <h1>Entrar no portal</h1>
+    {% if msg == "senha" %}<p class="login-ok"><i data-lucide="circle-check"></i>Senha nova salva. Entre com ela.</p>{% endif %}
     {% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
     <form method="post" action="/login">
-        <label>Usuario</label>
-        <input type="text" name="username" required autofocus>
-        <label>Senha</label>
-        <input type="password" name="password" required>
+        <label for="login-usuario">Usuário</label>
+        <input type="text" id="login-usuario" name="username" required autofocus autocomplete="username" autocapitalize="none">
+        <label for="login-senha">Senha</label>
+        <input type="password" id="login-senha" name="password" required autocomplete="current-password">
         <button type="submit">Entrar</button>
     </form>
+    <p class="login-ajuda"><a href="/esqueci-senha">Esqueci minha senha</a></p>
+    <p class="login-nota">Ainda não tem acesso? Peça ao administrador do portal.</p>
 </div>
 {% endblock %}

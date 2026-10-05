@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Avisos{% endblock %}
+{% block content %}
+{% set icone_aviso = {"cliente_novo": "user-plus", "recebeu_via_parceiro": "truck", "pedido_parceiro_cancelado": "circle-x", "pagamento_confirmado": "badge-check", "comprovante_recusado": "file-x", "contato_resolvido": "phone-forwarded", "cobrar_retorno_logistica": "truck", "oportunidade_logistica": "route", "comissao_liberada": "hand-coins"} %}
+<div class="pagina-cab">
+    <div>
+        <h1>Avisos</h1>
+        <p class="pagina-sub">{% if nao_lidos %}{{ nao_lidos }} não lido{{ "s" if nao_lidos != 1 }}{% else %}Tudo lido{% endif %}</p>
+    </div>
+    {% if nao_lidos %}
+    <div class="pagina-acoes">
+        <form method="post" action="/vendedor/crm/avisos/marcar-todos">
+            <button type="submit" class="back-btn"><i data-lucide="check-check"></i>Marcar todos como lidos</button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+{% for a in avisos %}
+<a class="aviso-item aviso-{{ a.tipo }}{{ ' aviso-lido' if a.lido }}" href="/vendedor/crm/avisos/{{ a.id }}/abrir">
+    <span class="aviso-icone"><i data-lucide="{{ icone_aviso.get(a.tipo, 'bell') }}"></i></span>
+    <div class="aviso-corpo">
+        {% if a.cliente %}<div class="aviso-cliente">{{ a.cliente.fazenda }}</div>{% endif %}
+        <div class="aviso-titulo">{% if not a.lido %}<span class="aviso-novo"></span>{% endif %}{{ a.titulo }}</div>
+        <div class="aviso-data">
+            {{ a.criado_em.strftime("%d/%m/%Y %H:%M") }}{{ " · por " ~ a.autor if a.autor }}
+            {% if user.role != "vendedor" %} · para {{ a.vendedor_nome }}{% endif %}
+        </div>
+        <div class="aviso-texto">{{ a.texto }}</div>
+        {% if a.cliente %}<div class="aviso-cta">Abrir cliente<i data-lucide="chevron-right"></i></div>{% endif %}
+    </div>
+</a>
+{% else %}
+<p class="fila-vazia">Nenhum aviso por enquanto. Aqui aparecem os clientes novos colocados na sua carteira e
+    os clientes seus que receberam produto via transportadora de outro vendedor.</p>
+{% endfor %}
+{% endblock %}

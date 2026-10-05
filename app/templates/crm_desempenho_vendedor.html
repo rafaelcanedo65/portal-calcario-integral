@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ "Meu desempenho" if user.role == "vendedor" else "Desempenho" }}{% endblock %}
+{% block content %}
+<div class="pagina-cab">
+    <div>
+        <h1>{{ "Meu desempenho" if user.role == "vendedor" else ("Desempenho · " ~ filtro_vendedor if filtro_vendedor else "Desempenho da empresa") }}</h1>
+        <p class="pagina-sub">{{ total_carteira }} clientes na carteira · período de {{ data_de.strftime("%d/%m/%Y") }} a {{ data_ate.strftime("%d/%m/%Y") }}</p>
+    </div>
+    <form method="get" class="form-inline" style="margin:0;">
+        {% if vendedores %}<label>Vendedor
+            <select name="vendedor">
+                <option value="">Todos (empresa)</option>
+                {% for v in vendedores %}<option value="{{ v }}" {{ "selected" if v == filtro_vendedor }}>{{ v }}</option>{% endfor %}
+            </select></label>{% endif %}
+        <label>De<input type="date" name="data_de" value="{{ data_de.isoformat() }}"></label>
+        <label>Até<input type="date" name="data_ate" value="{{ data_ate.isoformat() }}"></label>
+        <button type="submit">Atualizar</button>
+    </form>
+</div>
+
+{# Comissao (Rafael, 2026-10-04): so e liberada sobre o que a empresa recebeu #}
+<h2 class="secao-titulo" style="margin-top:0;">{{ "Minha comissão" if user.role == "vendedor" else "Comissão" }}</h2>
+<div class="stats-grid">
+    <div class="stat-card green">
+        <span class="num">{{ reais(comissao.liberada) }}</span>
+        <div class="label">Liberada no período (sobre o que os clientes pagaram)</div>
+    </div>
+    <div class="stat-card">
+        <span class="num">{{ reais(comissao.a_liberar) }}</span>
+        <div class="label">A liberar (quando os clientes pagarem o que falta)</div>
+    </div>
+</div>
+{% if pedidos_comissao %}
+<div class="comissao-lista">
+    {% for p in pedidos_comissao %}
+    <div class="comissao-item" title="{{ p.comissao_regra or '' }}">
+        <span><b>{{ p.codigo }}</b> · {{ p.cliente.fazenda }}
+            <span class="sub">{% if user.role != "vendedor" %}{{ p.cliente.vendedor_nome or "sem vendedor" }} · {% endif %}{{ decimal_br(p.comissao_pct) ~ "%" if p.comissao_pct is not none else "sem regra de comissão" }} · {{ situacao_comissao(p) }}</span></span>
+        <span class="comissao-valores">{% if p.comissao_pct is not none %}liberada <b>{{ reais(p.comissao_elegivel()) }}</b>
+            · a liberar <b>{{ reais(p.comissao_a_liberar()) }}</b>{% else %}—{% endif %}</span>
+    </div>
+    {% endfor %}
+</div>
+{% if n_pedidos_comissao > pedidos_comissao|length %}<p class="nota">Mostrando {{ pedidos_comissao|length }} de {{ n_pedidos_comissao }} pedidos. O relatório <a href="/relatorios?r=comissoes">Comissões</a> traz todos.</p>{% endif %}
+{% endif %}
+<p class="nota">A comissão de cada pedido usa o percentual da regra do dia em que ele foi gerado e só é liberada sobre o valor que o cliente já pagou
+    (à vista: quando o financeiro confirma o pagamento; carga a carga, a prazo e plano safra: a cada pagamento recebido).</p>
+
+<h2 class="secao-titulo">Atividade e conversão no período</h2>
+<div class="stats-grid">
+    <div class="stat-card">
+        <span class="num">{{ cobertura_pct|numbr(0) }}%</span>
+        <div class="label">Carteira atendida ({{ tocados }} de {{ total_carteira }})</div>
+    </div>
+    <div class="stat-card green">
+        <span class="num">{{ conversao_pct|numbr(0) }}%</span>
+        <div class="label">Taxa de conversão ({{ vendas }} venda{{ "s" if vendas != 1 }} de {{ tocados }} atendidos)</div>
+    </div>
+    <div class="stat-card red">
+        <span class="num">{{ perda_pct|numbr(0) }}%</span>
+        <div class="label">Taxa de perda ({{ perdidos }} de {{ tocados }} atendidos)</div>
+    </div>
+</div>
+<p class="nota">
+    "Carteira atendida" conta quem teve pelo menos um contato registrado no período. "Conversão" e "perda"
+    são calculadas sobre quem foi atendido: dos clientes com quem você falou, quantos viraram venda e quantos
+    foram perdidos.
+</p>
+
+<h2 class="secao-titulo">Funil de avanço no período</h2>
+<div class="stats-grid">
+    <div class="stat-card clay">
+        <span class="num">{{ progressao.contactado }}</span>
+        <div class="label">Avançaram para Contactados</div>
+    </div>
+    <div class="stat-card blue">
+        <span class="num">{{ progressao.proposta }}</span>
+        <div class="label">Avançaram para Proposta</div>
+    </div>
+    <div class="stat-card green">
+        <span class="num">{{ progressao.realizado }}</span>
+        <div class="label">Realizados</div>
+    </div>
+    <div class="stat-card red">
+        <span class="num">{{ progressao.perdido }}</span>
+        <div class="label">Perdidos</div>
+    </div>
+    <div class="stat-card grey">
+        <span class="num">{{ progressao.nao_usara }}</span>
+        <div class="label">Não usará</div>
+    </div>
+</div>
+
+<h2 class="secao-titulo">Propostas, pedidos e vendas</h2>
+<div class="summary-cards">
+    <div class="card">
+        <span class="card-value">R$ {{ valor_pipeline|numbr(0) }}</span>
+        <span class="card-label">Valor em proposta aberta (agora)</span>
+    </div>
+    <div class="card">
+        <span class="card-value">{{ pedidos_abertos }}</span>
+        <span class="card-label">Pedidos em aberto ({{ volume_pedidos_abertos|numbr(0) }} t para retirar)</span>
+    </div>
+    <a class="card {{ 'card-danger' if pedidos_vencidos else '' }}" {% if pedidos_vencidos %}href="/vendedor/crm/pedidos?vencidos=1"{% endif %} style="text-decoration:none; color:inherit;">
+        <span class="card-value">{{ pedidos_vencidos }}</span>
+        <span class="card-label">Pedidos com prazo vencido{% if pedidos_vencidos %} · ver ›{% endif %}</span>
+    </a>
+    <div class="card">
+        <span class="card-value">{{ volume_vendido_periodo|numbr(0) }} t</span>
+        <span class="card-label">Volume vendido no período</span>
+    </div>
+    <div class="card">
+        <span class="card-value">{{ ticket_medio_ton|numbr(0) }} t</span>
+        <span class="card-label">Ticket médio por venda</span>
+    </div>
+    <div class="card">
+        <span class="card-value">{% if ciclo_medio_dias is not none %}{{ ciclo_medio_dias|numbr(0) }} dias{% else %}Sem dados{% endif %}</span>
+        <span class="card-label">Ciclo médio de venda (do 1º contato até a venda)</span>
+    </div>
+    <div class="card">
+        <span class="card-value">{{ via_parceiro.clientes }}</span>
+        <span class="card-label">Clientes atendidos via parceiro ou transportadora no período ({{ via_parceiro.volume|numbr(0) }} t)</span>
+    </div>
+</div>
+<p class="nota">
+    Valor em proposta e pedidos em aberto são a foto de agora (não dependem do período escolhido). Os
+    outros cartões olham só quem virou venda dentro do período selecionado.
+    {% if vendas > 0 and ciclo_amostra < vendas %}
+    O ciclo médio usou {{ ciclo_amostra }} de {{ vendas }} venda{{ "s" if vendas != 1 }}: o resto veio
+    direto da planilha, sem histórico de contato detalhado (só a data da venda), então não dá para
+    medir o ciclo desses.
+    {% endif %}
+</p>
+
+<h2 class="secao-titulo">Atualização de cadastro</h2>
+<div class="summary-cards">
+    <div class="card">
+        <span class="card-value">{{ base.novos }}</span>
+        <span class="card-label">Clientes novos cadastrados no período</span>
+    </div>
+    <div class="card">
+        <span class="card-value">{{ base.atualizados }}</span>
+        <span class="card-label">Cadastros atualizados no período</span>
+    </div>
+</div>
+{% endblock %}

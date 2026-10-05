@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+{% block title %}Regras{% endblock %}
+{% block content %}
+{# Pagina Regras (Rafael, 2026-10-04): formato de tela de configuracoes -- grupos
+   a esquerda, uma linha curta por regra (nome + controle), numeros recuados
+   embaixo; a explicacao so abre ao clicar. Etapa 2: os valores se editam aqui,
+   com previa do efeito antes de salvar e historico. Logica em app/regras.py
+   e app/config.py. #}
+{% set secoes = [("ajustavel", "Números e prazos"), ("liga", "Alertas"), ("travada", "Proteção dos dados"),
+                 ("funcionamento", "Como funciona")] %}
+<div class="cfg-topo">
+    <h1>Regras do portal</h1>
+    <span class="cfg-progresso">{{ total }} regras{% if mudadas %} · <b class="cfg-mudadas">{{ mudadas }} com valor diferente do padrão</b>{% endif %}</span>
+</div>
+<p class="cfg-aviso"><i data-lucide="info"></i><span>Mudou um número ou desligou uma regra? Antes de salvar, o portal mostra o efeito.
+    Vale na hora para todos e fica no <a href="#" onclick="document.querySelector('.cfg-aba[data-grupo=historico]').click(); return false;">Histórico</a>.</span></p>
+
+<div class="cfg-painel">
+    <nav class="cfg-menu" aria-label="Grupos de regras">
+        <input type="text" enterkeyhint="search" id="cfg-busca" placeholder="Buscar" aria-label="Buscar regra" autocomplete="off">
+        {% for chave, nome, lista in grupos %}
+        <button type="button" class="cfg-aba" data-grupo="{{ chave }}" aria-controls="g-{{ chave }}">
+            <span>{{ nome }}</span>
+            <span class="cfg-aba-n">{% if lista|selectattr("mudou")|list %}<span class="cfg-ponto" title="Tem valor diferente do padrão"></span>{% endif %}{{ lista|length }}</span>
+        </button>
+        {% endfor %}
+        <button type="button" class="cfg-aba cfg-aba-historico" data-grupo="historico" aria-controls="g-historico">
+            <span><i data-lucide="history"></i>Histórico</span><span class="cfg-aba-n">{{ historico|length }}</span>
+        </button>
+    </nav>
+
+    <div class="cfg-conteudo">
+        {% for chave, nome, lista in grupos %}
+        <section class="cfg-grupo" id="g-{{ chave }}" data-grupo="{{ chave }}">
+            <h2 class="cfg-grupo-titulo">{{ nome }}</h2>
+            {% for tipo, titulo in secoes %}
+            {% set regras_tipo = lista|selectattr("tipo", "equalto", tipo)|list %}
+            {% if regras_tipo %}
+            <div class="cfg-secao">
+                <h3 class="cfg-secao-titulo">{{ titulo }}</h3>
+                {% for r in regras_tipo %}
+                {% set rev = revisoes.get(r.id) %}
+                {% set f = "f-" ~ r.id %}
+                <div class="cfg-regra {{ 'desligada' if r.liga and not r.ligada }}" id="r-{{ r.id }}" data-regra="{{ r.id }}">
+                    <div class="cfg-linha">
+                        <button type="button" class="cfg-nome" aria-expanded="false" aria-controls="det-{{ r.id }}">
+                            {% if r.mudou %}<span class="cfg-ponto" title="Valor diferente do padrão"></span>{% endif %}
+                            {{ r.nome }}
+                            {% if r.atencao %}<i data-lucide="triangle-alert" class="cfg-alerta" aria-label="Tem um ponto de atenção"></i>{% endif %}
+                        </button>
+                        <span class="cfg-controle">
+                            {% if r.liga %}
+                            <label class="cfg-chave" title="Ligar ou desligar esta regra">
+                                <input type="checkbox" name="v:{{ r.liga }}" value="1" form="{{ f }}" {{ "checked" if r.ligada }}
+                                       data-padrao="{{ '1' if r.padroes[r.liga] }}" aria-label="{{ r.nome }}: ligada">
+                                <span class="cfg-chave-trilho"></span></label>
+                            {% elif r.tipo == "travada" %}<i data-lucide="lock" title="Travada: protege os dados"></i>
+                            {% endif %}
+                            <i data-lucide="chevron-down" class="cfg-seta"></i>
+                        </span>
+                    </div>
+                    {% for p in r.parametros %}
+                    <div class="cfg-linha cfg-sub">
+                        <span>{{ p.nome }}{% if p.chave and p.mudou %}<span class="cfg-padrao">padrão: {{ p.padrao }}</span>{% endif %}</span>
+                        {% if p.chave %}
+                        <span class="cfg-valor">
+                            <input type="text" class="cfg-caixa {{ 'cfg-caixa-larga' if p.tipo in ('coord', 'lista_int') }}" name="v:{{ p.chave }}"
+                                   form="{{ f }}" value="{{ p.valor }}" data-padrao="{{ r.padroes[p.chave] }}" autocomplete="off"
+                                   {% if p.tipo == "int" %}inputmode="numeric"{% elif p.tipo == "decimal" %}inputmode="decimal"{% endif %}
+                                   placeholder="{{ 'centro da cidade' if p.tipo == 'coord' else ('dia/mês' if p.tipo == 'dia_mes' else '') }}"
+                                   aria-label="{{ r.nome }}: {{ p.nome }}">
+                            {% if p.tipo != "coord" %}<span class="cfg-unid">{{ p.unidade }}</span>{% endif %}
+                        </span>
+                        {% else %}
+                        <span class="cfg-texto">{{ p.valor }}{{ " " ~ p.unidade if p.unidade }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if r.lista %}
+                    {# Lista ordenada (Rafael, 2026-10-04): arrastar pela alca (ou setas) define a prioridade;
+                       cada caixa tem nome, liga/desliga e os numeros daquele nivel #}
+                    <input type="hidden" class="cfg-ordem-valor" name="v:{{ r.ordem }}" form="{{ f }}"
+                           value="{{ r.itens|map(attribute='chave')|join(',') }}" data-padrao="{{ r.padroes[r.ordem] }}">
+                    <ol class="cfg-ordem" aria-label="{{ r.nome }}: arraste para mudar a prioridade">
+                        {% for it in r.itens %}
+                        <li class="cfg-ordem-item {{ 'desligado' if not it.ligada }}" data-chave="{{ it.chave }}">
+                            <span class="cfg-ordem-mover">
+                                <button type="button" class="cfg-ordem-alca" aria-label="Arrastar {{ it.nome_atual }}" title="Arraste para mudar a prioridade">
+                                    <i data-lucide="grip-vertical"></i></button>
+                                <button type="button" class="cfg-subir" aria-label="Subir {{ it.nome_atual }}" title="Subir"><i data-lucide="chevron-up"></i></button>
+                                <button type="button" class="cfg-descer" aria-label="Descer {{ it.nome_atual }}" title="Descer"><i data-lucide="chevron-down"></i></button>
+                            </span>
+                            <span class="cfg-ordem-pos">{{ loop.index }}</span>
+                            <div class="cfg-ordem-corpo">
+                                <div class="cfg-ordem-topo">
+                                    {% if it.nome %}
+                                    {# Nome so muda pelo lapis (Rafael, 2026-10-04: campo livre muda sem querer) #}
+                                    <span class="cfg-ordem-rotulo cfg-ordem-nome-texto">{{ it.nome_atual }}</span>
+                                    <input type="text" class="cfg-ordem-nome" name="v:{{ it.nome }}" form="{{ f }}" value="{{ it.nome_atual }}" hidden
+                                           data-padrao="{{ r.padroes[it.nome] }}" maxlength="40" autocomplete="off" aria-label="Nome do nível {{ loop.index }}">
+                                    <button type="button" class="cfg-ordem-editar" title="Mudar o nome" aria-label="Mudar o nome de {{ it.nome_atual }}">
+                                        <i data-lucide="pencil"></i></button>
+                                    {% else %}<span class="cfg-ordem-rotulo">{{ it.nome_atual }}</span>{% endif %}
+                                    {% if it.liga %}
+                                    <label class="cfg-chave" title="Ligar ou desligar este nível">
+                                        <input type="checkbox" name="v:{{ it.liga }}" value="1" form="{{ f }}" {{ "checked" if it.ligada }}
+                                               data-padrao="{{ '1' if r.padroes[it.liga] }}" aria-label="{{ it.nome_atual }}: ligado">
+                                        <span class="cfg-chave-trilho"></span></label>
+                                    {% else %}
+                                    <span class="cfg-ordem-sempre" title="Sempre ligado (para não esquecer nenhum pedido)" aria-label="Sempre ligado"><i data-lucide="lock"></i></span>
+                                    {% endif %}
+                                </div>
+                                <p class="cfg-ordem-desc">{{ it.descricao }}</p>
+                                {% for p in it.parametros %}
+                                <div class="cfg-ordem-param">
+                                    <span>{{ p.nome }}{% if p.mudou %}<span class="cfg-padrao">padrão: {{ p.padrao }}</span>{% endif %}</span>
+                                    <span class="cfg-valor">
+                                        <input type="text" class="cfg-caixa" name="v:{{ p.chave }}" form="{{ f }}" value="{{ p.valor }}"
+                                               data-padrao="{{ r.padroes[p.chave] }}" inputmode="numeric" autocomplete="off"
+                                               aria-label="{{ it.nome_atual }}: {{ p.nome }}">
+                                        <span class="cfg-unid">{{ p.unidade }}</span>
+                                    </span>
+                                </div>
+                                {% endfor %}
+                                {% if it.atencao %}<p class="cfg-ordem-atencao"><i data-lucide="triangle-alert"></i>{{ it.atencao }}</p>{% endif %}
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ol>
+                    {% endif %}
+                    {% if r.chaves %}
+                    <div class="cfg-salvar" hidden>
+                        <div class="cfg-previa" aria-live="polite"></div>
+                        <label class="cfg-confirmo" hidden><input type="checkbox" name="confirmo" value="1" form="{{ f }}">
+                            Entendi: a carteira de todos os vendedores será reiniciada agora</label>
+                        <div class="cfg-salvar-botoes">
+                            <button type="submit" form="{{ f }}" class="btn btn-primario cfg-btn-salvar">Salvar</button>
+                            <button type="button" class="btn-rev cfg-cancelar">Cancelar</button>
+                        </div>
+                    </div>
+                    <form id="{{ f }}" method="post" action="/admin/regras/{{ r.id }}/salvar" class="cfg-form"></form>
+                    {% endif %}
+                    <div class="cfg-detalhe" id="det-{{ r.id }}" hidden>
+                        <p>{{ r.descricao }}</p>
+                        {% if r.condicoes %}<ul>{% for c in r.condicoes %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+                        {% if r.atencao %}<p class="cfg-atencao"><i data-lucide="triangle-alert"></i>{{ r.atencao }}</p>{% endif %}
+                        <p class="cfg-onde">Onde aparece: {{ r.onde }}</p>
+                        {% set hist = historico|selectattr("chave", "in", r.chaves)|list %}
+                        {% if hist %}
+                        <ul class="cfg-hist-curto">
+                            {% for h in hist[:5] %}<li>{{ h.quando.strftime("%d/%m/%Y %H:%M") }} · {{ h.quem }}: {{ h.campo }} de <b>{{ h.antes }}</b> para <b>{{ h.depois }}</b></li>{% endfor %}
+                        </ul>
+                        {% endif %}
+                        <div class="cfg-revisao">
+                            {% if r.mudou %}<button type="button" class="btn-rev cfg-padrao-btn"><i data-lucide="rotate-ccw"></i>Voltar ao padrão</button>{% endif %}
+                            {% if rev %}<span class="cfg-rev-quem">Descrição: {{ "confere" if rev.situacao == "ok" else "a corrigir" }} · {{ rev.quem }}, {{ rev.quando.strftime("%d/%m") }}</span>{% endif %}
+                            {% if not rev or rev.situacao != "ok" %}
+                            <form method="post" action="/admin/regras/{{ r.id }}/revisao"><input type="hidden" name="situacao" value="ok">
+                                <button type="submit" class="btn-rev btn-rev-ok"><i data-lucide="check"></i>Descrição confere</button></form>
+                            {% endif %}
+                            <button type="button" class="btn-rev" onclick="var f = document.getElementById('corr-{{ r.id }}'); f.hidden = !f.hidden; if (!f.hidden) f.querySelector('textarea').focus();">
+                                <i data-lucide="pencil"></i>{{ "Editar correção" if rev and rev.situacao == "corrigir" else "Corrigir descrição" }}</button>
+                            {% if rev %}
+                            <form method="post" action="/admin/regras/{{ r.id }}/revisao"><input type="hidden" name="situacao" value="limpar">
+                                <button type="submit" class="btn-rev btn-rev-limpar">Desfazer</button></form>
+                            {% endif %}
+                        </div>
+                        {% if rev and rev.situacao == "corrigir" and rev.comentario %}<p class="cfg-comentario">Sua correção: "{{ rev.comentario }}"</p>{% endif %}
+                        <form method="post" action="/admin/regras/{{ r.id }}/revisao" class="cfg-corrigir" id="corr-{{ r.id }}" hidden>
+                            <input type="hidden" name="situacao" value="corrigir">
+                            <textarea name="comentario" rows="2" required aria-label="O que está errado na descrição"
+                                      placeholder="O que está errado na descrição, ou o que mais você quer poder ajustar?">{{ rev.comentario if rev and rev.comentario else "" }}</textarea>
+                            <button type="submit" class="btn btn-primario">Salvar correção</button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </section>
+        {% endfor %}
+
+        <section class="cfg-grupo" id="g-historico" data-grupo="historico">
+            <h2 class="cfg-grupo-titulo">Histórico de mudanças</h2>
+            {% if historico %}
+            <ul class="cfg-historico">
+                {% for h in historico %}
+                <li><span class="cfg-hist-quando">{{ h.quando.strftime("%d/%m/%Y %H:%M") }} · {{ h.quem }}</span>
+                    <span><b>{{ h.regra }}</b> — {{ h.campo }}: {{ h.antes }} → <b>{{ h.depois }}</b></span></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="cfg-nada">Nenhuma regra foi mudada ainda. Todas seguem o padrão.</p>
+            {% endif %}
+        </section>
+        <p class="cfg-nada" id="cfg-nada" hidden>Nenhuma regra com esse texto.</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    var abas = document.querySelectorAll(".cfg-aba"), grupos = document.querySelectorAll(".cfg-grupo");
+    var busca = document.getElementById("cfg-busca");
+    var menu = document.querySelector(".cfg-menu");
+    function mostrarGrupo(chave) {
+        abas.forEach(function (a) {
+            a.classList.toggle("ativa", a.dataset.grupo === chave);
+            // No celular as abas viram uma faixa que rola de lado: traz a ativa pra vista
+            if (a.dataset.grupo === chave && menu.scrollWidth > menu.clientWidth) menu.scrollLeft = a.offsetLeft - 140;
+        });
+        grupos.forEach(function (g) { g.hidden = g.dataset.grupo !== chave; });
+        try { localStorage.setItem("regras-grupo", chave); } catch (e) {}
+    }
+    abas.forEach(function (a) {
+        a.addEventListener("click", function () {
+            if (busca.value) { busca.value = ""; filtrar(); }
+            mostrarGrupo(a.dataset.grupo);
+        });
+    });
+    function abrir(regra, abrirDetalhe) {
+        var det = regra.querySelector(".cfg-detalhe"), botao = regra.querySelector(".cfg-nome");
+        det.hidden = !abrirDetalhe;
+        botao.setAttribute("aria-expanded", abrirDetalhe ? "true" : "false");
+        regra.classList.toggle("aberta", abrirDetalhe);
+    }
+
+    // ---- Edicao: mudou algo -> barra com a previa do efeito, Salvar / Cancelar
+    function campos(regra) { return regra.querySelectorAll("input[name^='v:']"); }
+    function valorDe(el) { return el.type === "checkbox" ? (el.checked ? "1" : "") : el.value.trim(); }
+    document.querySelectorAll(".cfg-regra").forEach(function (regra) {
+        regra.querySelector(".cfg-nome").addEventListener("click", function () {
+            abrir(regra, regra.querySelector(".cfg-detalhe").hidden);
+        });
+        var barra = regra.querySelector(".cfg-salvar");
+        if (!barra) return;
+        var form = document.getElementById("f-" + regra.dataset.regra);
+        var previa = barra.querySelector(".cfg-previa"), salvar = barra.querySelector(".cfg-btn-salvar");
+        var confirmo = barra.querySelector(".cfg-confirmo"), confirmoBox = confirmo.querySelector("input");
+        // Pelo NOME do campo (nao pela posicao: as caixas mudam de lugar ao arrastar)
+        var originais = {};
+        campos(regra).forEach(function (el) { originais[el.name] = valorDe(el); });
+        var timer = null, pedido = 0, precisaConfirmar = false;
+        function mudou() { return Array.prototype.some.call(campos(regra), function (el) { return valorDe(el) !== originais[el.name]; }); }
+        function atualizarSalvar() { salvar.disabled = barra.dataset.erro === "1" || (precisaConfirmar && !confirmoBox.checked); }
+        function calcular() {
+            var meu = ++pedido;
+            previa.className = "cfg-previa carregando";
+            previa.textContent = "Calculando o efeito...";
+            fetch("/admin/regras/" + regra.dataset.regra + "/previa", {method: "POST", body: new FormData(form)})
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (meu !== pedido) return;  // ja mudou de novo
+                    previa.innerHTML = "";
+                    barra.dataset.erro = d.erro ? "1" : "";
+                    if (d.erro) { previa.className = "cfg-previa erro"; previa.textContent = d.erro; }
+                    else {
+                        previa.className = "cfg-previa";
+                        d.frases.forEach(function (t) { var p = document.createElement("p"); p.textContent = t; previa.appendChild(p); });
+                    }
+                    precisaConfirmar = !!d.confirmar;
+                    confirmo.hidden = !precisaConfirmar;
+                    if (!precisaConfirmar) confirmoBox.checked = false;
+                    atualizarSalvar();
+                })
+                .catch(function () { if (meu === pedido) { previa.className = "cfg-previa erro"; previa.textContent = "Não foi possível calcular o efeito agora."; } });
+        }
+        function aoMudar() {
+            var ligada = regra.querySelector(".cfg-chave input");
+            regra.classList.toggle("desligada", !!ligada && !ligada.checked);
+            if (!mudou()) { barra.hidden = true; pedido++; return; }
+            barra.hidden = false;
+            salvar.disabled = true;
+            clearTimeout(timer);
+            timer = setTimeout(calcular, 500);
+        }
+        campos(regra).forEach(function (el) {
+            el.addEventListener(el.type === "checkbox" ? "change" : "input", aoMudar);
+        });
+        confirmoBox.addEventListener("change", atualizarSalvar);
+        barra.querySelector(".cfg-cancelar").addEventListener("click", function () {
+            campos(regra).forEach(function (el) {
+                if (el.type === "checkbox") el.checked = originais[el.name] === "1"; else el.value = originais[el.name];
+            });
+            var l = regra.querySelector(".cfg-ordem");
+            if (l) l.aplicarOrdem();
+            aoMudar();
+        });
+        var padrao = regra.querySelector(".cfg-padrao-btn");
+        if (padrao) padrao.addEventListener("click", function () {
+            campos(regra).forEach(function (el) {
+                if (el.type === "checkbox") el.checked = el.dataset.padrao === "1"; else el.value = el.dataset.padrao;
+            });
+            var l = regra.querySelector(".cfg-ordem");
+            if (l) l.aplicarOrdem();
+            aoMudar();
+        });
+        form.addEventListener("submit", function () { salvar.disabled = true; salvar.textContent = "Salvando..."; });
+
+        // ---- Lista ordenada: arrastar (mouse ou dedo) ou setas; a ordem vai num campo escondido
+        var lista = regra.querySelector(".cfg-ordem");
+        if (lista) {
+            var ordemInput = regra.querySelector(".cfg-ordem-valor");
+            var numerar = function () {
+                lista.querySelectorAll(".cfg-ordem-pos").forEach(function (el, i) { el.textContent = i + 1; });
+            };
+            var gravarOrdem = function () {
+                ordemInput.value = Array.prototype.map.call(lista.children, function (li) { return li.dataset.chave; }).join(",");
+                numerar();
+                ordemInput.dispatchEvent(new Event("input"));
+            };
+            lista.aplicarOrdem = function () {
+                lista.querySelectorAll(".cfg-ordem-nome").forEach(function (campo) {
+                    campo.previousElementSibling.textContent = campo.value;
+                });
+                ordemInput.value.split(",").forEach(function (k) {
+                    var li = lista.querySelector('[data-chave="' + k + '"]');
+                    if (li) lista.appendChild(li);
+                });
+                numerar();
+                lista.querySelectorAll(".cfg-ordem-item").forEach(function (li) {
+                    var cx = li.querySelector(".cfg-chave input");
+                    li.classList.toggle("desligado", !!cx && !cx.checked);
+                });
+            };
+            lista.querySelectorAll(".cfg-ordem-item").forEach(function (li) {
+                li.querySelector(".cfg-subir").addEventListener("click", function () {
+                    if (li.previousElementSibling) { lista.insertBefore(li, li.previousElementSibling); gravarOrdem(); li.querySelector(".cfg-subir").focus(); }
+                });
+                li.querySelector(".cfg-descer").addEventListener("click", function () {
+                    if (li.nextElementSibling) { lista.insertBefore(li.nextElementSibling, li); gravarOrdem(); li.querySelector(".cfg-descer").focus(); }
+                });
+                var cx = li.querySelector(".cfg-chave input");
+                if (cx) cx.addEventListener("change", function () { li.classList.toggle("desligado", !cx.checked); });
+                var lapis = li.querySelector(".cfg-ordem-editar");
+                if (lapis) {
+                    var campo = li.querySelector(".cfg-ordem-nome"), texto = li.querySelector(".cfg-ordem-nome-texto");
+                    var antesDeEditar = "";
+                    var fechar = function (manter) {
+                        if (campo.hidden) return;
+                        if (!manter || !campo.value.trim()) { campo.value = antesDeEditar; campo.dispatchEvent(new Event("input")); }
+                        campo.value = campo.value.trim();
+                        texto.textContent = campo.value;
+                        campo.hidden = true; texto.hidden = false; lapis.hidden = false;
+                        lapis.focus();
+                    };
+                    lapis.addEventListener("click", function () {
+                        antesDeEditar = campo.value;
+                        campo.hidden = false; texto.hidden = true; lapis.hidden = true;
+                        campo.focus(); campo.select();
+                    });
+                    campo.addEventListener("keydown", function (e) {
+                        if (e.key === "Enter") { e.preventDefault(); fechar(true); }
+                        else if (e.key === "Escape") { e.preventDefault(); fechar(false); }
+                    });
+                    campo.addEventListener("blur", function () { fechar(true); });
+                }
+                var alca = li.querySelector(".cfg-ordem-alca");
+                var soltar = function () {
+                    if (!li.classList.contains("arrastando")) return;
+                    li.classList.remove("arrastando");
+                    var agora = Array.prototype.map.call(lista.children, function (x) { return x.dataset.chave; }).join(",");
+                    if (agora !== ordemInput.value) gravarOrdem();
+                };
+                // Mouse: arrastar nativo do navegador
+                alca.setAttribute("draggable", "true");
+                alca.addEventListener("dragstart", function (e) {
+                    li.classList.add("arrastando");
+                    e.dataTransfer.effectAllowed = "move";
+                    try { e.dataTransfer.setData("text/plain", li.dataset.chave); e.dataTransfer.setDragImage(li, 16, 16); } catch (erro) {}
+                });
+                alca.addEventListener("dragend", soltar);
+                // Dedo (celular): o arrastar nativo nao funciona com toque
+                alca.addEventListener("pointerdown", function (e) {
+                    if (e.pointerType === "mouse") return;
+                    e.preventDefault();
+                    li.classList.add("arrastando");
+                    try { alca.setPointerCapture(e.pointerId); } catch (erro) {}
+                });
+                alca.addEventListener("pointermove", function (e) {
+                    if (e.pointerType === "mouse" || !li.classList.contains("arrastando")) return;
+                    moverPara(li, document.elementFromPoint(e.clientX, e.clientY), e.clientY);
+                });
+                alca.addEventListener("pointerup", function (e) { if (e.pointerType !== "mouse") soltar(); });
+                alca.addEventListener("pointercancel", function (e) { if (e.pointerType !== "mouse") soltar(); });
+            });
+            var moverPara = function (li, sob, y) {
+                var alvo = sob && sob.closest && sob.closest(".cfg-ordem-item");
+                if (!alvo || alvo === li || alvo.parentNode !== lista) return;
+                var caixa = alvo.getBoundingClientRect();
+                lista.insertBefore(li, y < caixa.top + caixa.height / 2 ? alvo : alvo.nextSibling);
+                numerar();
+            };
+            lista.addEventListener("dragover", function (e) {
+                var li = lista.querySelector(".cfg-ordem-item.arrastando");
+                if (!li) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                moverPara(li, e.target, e.clientY);
+            });
+            lista.addEventListener("drop", function (e) { e.preventDefault(); });
+        }
+    });
+
+    document.querySelectorAll("input[name='v:retirada_apertada_t_dia']").forEach(function (el, _, todos) {
+        el.addEventListener("input", function () {
+            todos.forEach(function (outro) { if (outro !== el) outro.value = el.value; });
+        });
+    });
+
+    // Busca: procura em todos os grupos (inclusive no texto escondido do detalhe)
+    function normal(t) { return t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+    function filtrar() {
+        var q = normal(busca.value.trim());
+        if (!q) {
+            document.querySelectorAll(".cfg-regra, .cfg-secao").forEach(function (el) { el.hidden = false; });
+            document.getElementById("cfg-nada").hidden = true;
+            var ativa = document.querySelector(".cfg-aba.ativa");
+            var salvo = null;
+            try { salvo = localStorage.getItem("regras-grupo"); } catch (e) {}
+            mostrarGrupo(ativa ? ativa.dataset.grupo : (salvo && document.querySelector('.cfg-aba[data-grupo="' + salvo + '"]') ? salvo : abas[0].dataset.grupo));
+            return;
+        }
+        var algum = false;
+        grupos.forEach(function (g) {
+            if (g.dataset.grupo === "historico") { g.hidden = true; return; }
+            var nGrupo = 0;
+            g.querySelectorAll(".cfg-secao").forEach(function (s) {
+                var nSecao = 0;
+                s.querySelectorAll(".cfg-regra").forEach(function (r) {
+                    var ok = normal(r.textContent).indexOf(q) >= 0;
+                    r.hidden = !ok; nSecao += ok;
+                });
+                s.hidden = !nSecao; nGrupo += nSecao;
+            });
+            g.hidden = !nGrupo; algum = algum || nGrupo > 0;
+        });
+        abas.forEach(function (a) { a.classList.remove("ativa"); });
+        document.getElementById("cfg-nada").hidden = algum;
+    }
+    busca.addEventListener("input", filtrar);
+
+    // Volta de um salvamento (#r-<id>): abre o grupo e a regra
+    var alvo = location.hash.indexOf("#r-") === 0 ? document.getElementById(location.hash.slice(1)) : null;
+    var inicial = null;
+    try { inicial = localStorage.getItem("regras-grupo"); } catch (e) {}
+    if (alvo) {
+        mostrarGrupo(alvo.closest(".cfg-grupo").dataset.grupo);
+        abrir(alvo, true);
+        setTimeout(function () { alvo.scrollIntoView({block: "center"}); }, 50);
+    } else {
+        mostrarGrupo(inicial && document.querySelector('.cfg-aba[data-grupo="' + inicial + '"]') ? inicial : abas[0].dataset.grupo);
+    }
+})();
+</script>
+{% endblock %}

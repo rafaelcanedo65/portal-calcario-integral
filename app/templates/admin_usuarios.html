@@ -1,37 +1,164 @@
 {% extends "base.html" %}
-{% block title %}Usuarios{% endblock %}
+{% block title %}Pessoas e acessos{% endblock %}
 {% block content %}
-<h1>Usuarios do portal</h1>
+<style>.fab { display: none !important; }</style>{# o "+" de cadastrar cliente cobria o formulario #}
+{# Pessoas e acessos (Rafael, 2026-10-05; logica em acessos.py): so o admin cria login e define o setor. Lista em linhas
+   curtas (estilo das telas de configuracao); "Editar" abre a linha ali mesmo. Depois de criar ou redefinir senha, o
+   cartao do topo mostra a senha temporaria UMA vez e diz o proximo passo. #}
+<div class="pagina-cab">
+    <div>
+        <h1>Pessoas e acessos</h1>
+        <p class="pagina-sub">{{ pessoas|selectattr("ativo")|list|length }} pessoas com acesso · cada setor vê só a sua área</p>
+    </div>
+    <button type="button" class="btn btn-primario" onclick="abrirNovo()"><i data-lucide="user-plus"></i>Cadastrar pessoa</button>
+</div>
+
+{% if not email_configurado %}
+<p class="pa-aviso"><i data-lucide="mail-warning"></i><span><b>E-mail ainda não configurado.</b> O "Esqueci minha senha" está em modo de
+    teste: os links ficam só num registro do servidor. Peça à TI os dados do servidor de e-mail (SMTP) para valer de verdade.</span></p>
+{% endif %}
+
+{% if resultado %}
+{% set p = resultado.pessoa %}
+<section class="pa-resultado" aria-live="polite">
+    <i data-lucide="circle-check"></i>
+    <div>
+        <b>{{ "Acesso criado para " ~ p.nome_completo if resultado.tipo == "criado" else "Senha redefinida para " ~ p.nome_completo }}</b>
+        <div class="pa-credenciais">
+            <span>Usuário <code>{{ p.username }}</code></span>
+            <span>Senha temporária <code id="pa-senha">{{ resultado.senha }}</code>
+                <button type="button" class="pa-copiar" onclick="copiarAcesso('{{ p.username }}', '{{ resultado.senha }}', this)"><i data-lucide="copy"></i>Copiar</button></span>
+        </div>
+        <p><b>Próximo passo:</b> passe o usuário e a senha para {{ p.nome_completo.split(" ")[0] }}. No primeiro acesso o portal pede
+            para criar a própria senha. Esta senha temporária aparece só agora.</p>
+    </div>
+</section>
+{% endif %}
 {% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
 
-<table class="tabela">
-    <thead><tr><th>Usuario</th><th>Nome</th><th>Papel</th><th>Vendedor vinculado</th><th>Ativo</th></tr></thead>
-    <tbody>
-        {% for u in usuarios %}
-        <tr>
-            <td>{{ u.username }}</td>
-            <td>{{ u.nome_completo }}</td>
-            <td><span class="badge role-{{ u.role }}">{{ u.role }}</span></td>
-            <td>{{ u.vendedor_nome or "-" }}</td>
-            <td>{{ "Sim" if u.ativo else "Nao" }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if pedidos_senha %}
+<section class="pa-pedidos" id="pedidos-senha">
+    <h2 class="secao-titulo" style="margin:0 0 6px;">Pediram senha nova <span class="pa-conta">{{ pedidos_senha|length }}</span></h2>
+    {% for ped in pedidos_senha %}
+    <div class="pa-pedido">
+        <span><b>{{ ped.user.nome_completo }}</b> · {{ ped.user.username }} · {{ ha(ped.criado_em) }} · {{ ped.motivo }}</span>
+        <form method="post" action="/admin/usuarios/{{ ped.user.id }}/senha"><button type="submit" class="btn btn-primario pa-btn">Redefinir agora<i data-lucide="arrow-right"></i></button></form>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
 
-<h2>Criar novo usuario</h2>
-<form method="post" action="/admin/usuarios" class="form-inline">
-    <label>Usuario<input type="text" name="username" required></label>
-    <label>Senha inicial<input type="text" name="senha" required></label>
-    <label>Nome completo<input type="text" name="nome_completo" required></label>
-    <label>Papel
-        <select name="role">
-            <option value="vendedor">vendedor</option>
-            <option value="logistica">logistica</option>
-            <option value="admin">admin</option>
-        </select>
-    </label>
-    <label>Nome do vendedor na planilha (se papel = vendedor)<input type="text" name="vendedor_nome"></label>
-    <button type="submit">Criar usuario</button>
-</form>
+{# Cadastro: passos na ordem (nome -> setor -> carteira se for vendedor -> usuario -> e-mail) #}
+<section class="pa-novo" id="novo" {{ "hidden" if abrir != "novo" }}>
+    <div class="pa-novo-cab"><i data-lucide="user-plus"></i>Cadastrar pessoa
+        <button type="button" class="pa-fechar" onclick="document.getElementById('novo').hidden = true">Cancelar</button></div>
+    <form method="post" action="/admin/usuarios" class="pa-form" id="form-novo">
+        <div class="pa-passo"><span class="pa-num"></span>
+            <label>Nome completo<input type="text" name="nome_completo" value="{{ form.nome_completo or '' }}" required minlength="3" oninput="sugerirUsuario(this)"></label></div>
+        <div class="pa-passo"><span class="pa-num"></span>
+            <fieldset class="pa-setores"><legend>Setor: o que a pessoa vai ver</legend>
+                {% for s in setores %}
+                <label class="pa-setor"><input type="radio" name="role" value="{{ s }}" required {{ "checked" if form.role == s }} onchange="mostrarCarteira(this.form)">
+                    <span><b>{{ rotulo[s] }}</b><small>{{ descricao[s] }}</small></span></label>
+                {% endfor %}
+            </fieldset></div>
+        <div class="pa-passo pa-so-vendedor"><span class="pa-num"></span>
+            <div class="pa-carteira">
+                <label>Carteira do vendedor
+                    <select name="carteira">
+                        <option value="">Escolha a carteira</option>
+                        {% for c in carteiras %}<option value="{{ c.nome }}" {{ "selected" if form.carteira == c.nome }} {{ "disabled" if c.com_usuario }}>{{ c.nome }} · {{ c.clientes }} clientes{{ " · já tem acesso" if c.com_usuario }}</option>{% endfor %}
+                    </select></label>
+                <label>ou carteira nova (vendedor sem clientes ainda)<input type="text" name="carteira_nova" value="{{ form.carteira_nova or '' }}"></label>
+            </div></div>
+        <div class="pa-passo"><span class="pa-num"></span>
+            <label>Usuário (para entrar)<input type="text" name="username" value="{{ form.username or '' }}" pattern="[a-z0-9._\-]{3,40}"
+                   title="Letras minúsculas, números, ponto ou hífen" autocapitalize="none" id="novo-usuario"></label>
+            <label>E-mail <small>(para recuperar a senha)</small><input type="email" name="email" value="{{ form.email or '' }}"></label></div>
+        <div class="pa-acoes">
+            <button type="submit" class="btn btn-primario">Criar acesso<i data-lucide="arrow-right"></i></button>
+            <span class="nota">O portal gera uma senha temporária; no 1º acesso a pessoa cria a dela.</span>
+        </div>
+    </form>
+</section>
+
+<div class="pa-filtros" role="tablist">
+    <button type="button" class="pa-filtro ativo" data-setor="">Todos <span>{{ pessoas|selectattr("ativo")|list|length }}</span></button>
+    {% for s in setores %}{% if contagem[s] %}<button type="button" class="pa-filtro" data-setor="{{ s }}">{{ rotulo[s] }} <span>{{ contagem[s] }}</span></button>{% endif %}{% endfor %}
+</div>
+
+<ul class="pa-lista">
+    {% for p in pessoas %}
+    <li class="pa-pessoa{{ ' inativa' if not p.ativo }}" id="p{{ p.id }}" data-setor="{{ p.role }}">
+        <details {{ "open" if abrir == "p" ~ p.id }}>
+            <summary>
+                <span class="ai-presenca{{ ' on' if online[p.id] }}" title="{{ presenca[p.id] }}"></span>
+                <span class="pa-nome"><b>{{ p.nome_completo }}</b><small>{{ p.username }}{% if p.vendedor_nome %} · carteira {{ p.vendedor_nome }}{% endif %}</small></span>
+                <span class="pa-setor-tag pa-s-{{ p.role }}">{{ rotulo.get(p.role, p.role) }}</span>
+                <span class="pa-email{{ ' pa-sem' if not p.email }}">{{ p.email or "sem e-mail" }}</span>
+                <span class="pa-status">{% if not p.ativo %}desativado{% elif p.senha_temporaria %}esperando 1º acesso{% else %}{{ presenca[p.id].replace("Offline · ", "").replace("Online agora (portal aberto)", "online agora") }}{% endif %}</span>
+                <span class="pa-editar"><i data-lucide="pencil"></i>Editar</span>
+            </summary>
+            <div class="pa-edicao">
+                <form method="post" action="/admin/usuarios/{{ p.id }}" class="pa-form-edit">
+                    <label>Nome completo<input type="text" name="nome_completo" value="{{ p.nome_completo }}" required></label>
+                    <label>Setor<select name="role" onchange="mostrarCarteira(this.form)" {{ "disabled" if p.id == user.id }}>
+                        {% for s in setores %}<option value="{{ s }}" {{ "selected" if p.role == s }}>{{ rotulo[s] }}</option>{% endfor %}</select></label>
+                    {% if p.id == user.id %}<input type="hidden" name="role" value="{{ p.role }}">{% endif %}
+                    <label class="pa-so-vendedor">Carteira<select name="carteira">
+                        <option value="">Escolha a carteira</option>
+                        {% for c in carteiras %}<option value="{{ c.nome }}" {{ "selected" if p.vendedor_nome == c.nome }} {{ "disabled" if c.com_usuario and p.vendedor_nome != c.nome }}>{{ c.nome }} · {{ c.clientes }}</option>{% endfor %}
+                        {% if p.vendedor_nome and p.vendedor_nome not in carteiras|map(attribute="nome")|list %}<option value="{{ p.vendedor_nome }}" selected>{{ p.vendedor_nome }} (sem clientes)</option>{% endif %}
+                    </select></label>
+                    <label>E-mail<input type="email" name="email" value="{{ p.email or '' }}"></label>
+                    <button type="submit" class="btn btn-primario">Salvar</button>
+                </form>
+                <div class="pa-acoes-linha">
+                    <form method="post" action="/admin/usuarios/{{ p.id }}/senha" onsubmit="return confirm('Gerar uma senha temporária nova para {{ p.nome_completo }}? A senha atual deixa de valer.');">
+                        <button type="submit" class="btn btn-secundario-claro"><i data-lucide="key-round"></i>Redefinir senha</button></form>
+                    {% if p.id != user.id %}
+                    <form method="post" action="/admin/usuarios/{{ p.id }}/ativo" onsubmit="return confirm('{{ 'Reativar' if not p.ativo else 'Desativar' }} o acesso de {{ p.nome_completo }}?');">
+                        <button type="submit" class="btn btn-secundario-claro {{ 'pa-perigo' if p.ativo }}"><i data-lucide="{{ 'user-check' if not p.ativo else 'user-x' }}"></i>{{ "Reativar acesso" if not p.ativo else "Desativar acesso" }}</button></form>
+                    {% endif %}
+                </div>
+            </div>
+        </details>
+    </li>
+    {% endfor %}
+</ul>
+
+<script>
+function abrirNovo() {
+    var d = document.getElementById("novo");
+    d.hidden = false;
+    d.scrollIntoView({block: "start", behavior: "smooth"});
+    var c = d.querySelector("input[name=nome_completo]");
+    if (c) setTimeout(function () { c.focus(); }, 250);
+}
+function mostrarCarteira(form) {
+    var r = form.querySelector("input[name=role]:checked") || form.querySelector("select[name=role]");
+    var vend = r && r.value === "vendedor";
+    form.querySelectorAll(".pa-so-vendedor").forEach(function (el) { el.hidden = !vend; });
+}
+var usuarioEditado = false;
+document.getElementById("novo-usuario").addEventListener("input", function () { usuarioEditado = true; });
+function sugerirUsuario(campo) {
+    if (usuarioEditado) return;
+    var p = campo.value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().match(/[a-z0-9]+/g) || [];
+    document.getElementById("novo-usuario").value = p.length > 1 ? p[0] + "." + p[p.length - 1] : (p[0] || "");
+}
+function copiarAcesso(usuario, senha, botao) {
+    var texto = "Portal Integral\nUsuário: " + usuario + "\nSenha temporária: " + senha + "\n(no primeiro acesso você cria a sua senha)";
+    (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(function () {
+        botao.lastChild.textContent = "Copiado";
+    }).catch(function () { window.prompt("Copie e envie:", texto); });
+}
+document.querySelectorAll("form").forEach(function (f) { if (f.querySelector(".pa-so-vendedor")) mostrarCarteira(f); });
+document.querySelectorAll(".pa-filtro").forEach(function (b) {
+    b.addEventListener("click", function () {
+        document.querySelectorAll(".pa-filtro").forEach(function (x) { x.classList.toggle("ativo", x === b); });
+        document.querySelectorAll(".pa-pessoa").forEach(function (li) { li.hidden = b.dataset.setor && li.dataset.setor !== b.dataset.setor; });
+    });
+});
+</script>
 {% endblock %}

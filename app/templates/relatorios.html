@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block title %}{{ rel.titulo if rel else "Relatórios" }}{% endblock %}
+
+{% macro celula(valor, tipo) -%}
+{%- if valor is none or valor == "" -%}<span class="rel-vazio">—</span>
+{%- elif tipo == "data" and valor.strftime is defined -%}{{ valor.strftime("%d/%m/%Y") }}
+{%- elif tipo == "t" and valor is number -%}{{ valor|numbr(1) }} t
+{%- elif tipo == "num" and valor is number -%}{{ valor|numbr(1) }}
+{%- elif tipo == "moeda" and valor is number -%}R$ {{ valor|numbr(2) }}
+{%- elif tipo == "pct" and valor is number -%}{{ (valor * 100)|numbr(1) }}%
+{%- elif tipo == "int" and valor is number -%}{{ valor|numbr(0) }}
+{%- else -%}{{ valor }}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro tabela_rel(r, celulas=[], ver=none) -%}
+{% set numerico = ('t', 'num', 'moeda', 'pct', 'int') %}
+<div class="rel-tabela-wrap">
+    <table class="tabela rel-tabela">
+        <thead>
+            <tr>{% for rotulo, tipo in r.colunas %}<th class="{{ 'num' if tipo in numerico else tipo }}">{{ rotulo }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+            {% for linha in r.linhas[:limite] %}
+            {% set i = loop.index0 %}
+            {% set url = r.links[i] %}
+            <tr>
+                {% for rotulo, tipo in r.colunas %}{% set j = loop.index0 %}{% set valor = linha[j] %}
+                <td class="{{ 'num' if tipo in numerico else tipo }}">
+                    {%- if (i, j) in celulas -%}<a class="rel-drill {{ 'ativo' if ver and res.ver and f.ver == (i, j) }}" href="/relatorios?{{ query_base }}&amp;ver={{ i }}.{{ j }}#detalhe" title="Ver quem são os clientes">{{ celula(valor, tipo) }}</a>
+                    {%- elif url and j == r.col_link -%}<a href="{{ url }}">{{ celula(valor, tipo) }}</a>
+                    {%- else -%}{{ celula(valor, tipo) }}{%- endif -%}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="pagina-cab rel-cab">
+    <div>
+        <h1>Relatórios</h1>
+        <p class="pagina-sub">{{ relatorios|length }} relatório{{ "s" if relatorios|length != 1 }} disponíve{{ "is" if relatorios|length != 1 else "l" }} para o seu perfil</p>
+    </div>
+</div>
+
+<div class="rel-layout">
+    {# Catalogo: busca + setor + lista. Com um relatorio aberto ele recolhe numa
+       barra (o relatorio abre logo abaixo, com a largura toda pra tabela) e
+       "Trocar relatorio" abre de novo no mesmo lugar. #}
+    <section class="rel-catalogo {{ 'recolhido' if rel }}" id="catalogo">
+        {% if rel %}
+        <button type="button" class="rel-trocar" onclick="abrirCatalogo()" aria-expanded="false">
+            <i data-lucide="layout-grid"></i>
+            <span>Trocar relatório</span>
+            <span class="rel-trocar-atual">{{ relatorios|length }} disponíveis</span>
+            <i data-lucide="chevron-down" class="rel-trocar-seta"></i>
+        </button>
+        {% endif %}
+        <div class="rel-catalogo-corpo">
+        <div class="rel-catalogo-cab">
+        <div class="busca rel-busca">
+            <i data-lucide="search"></i>
+            <input type="text" id="rel-busca" placeholder="Buscar relatório…" autocomplete="off" aria-label="Buscar relatório">
+        </div>
+        {% if setores|length > 1 %}
+        <div class="rel-setores" role="tablist">
+            <button type="button" class="rel-setor ativo" data-setor="">Todos</button>
+            {% for s in setores %}<button type="button" class="rel-setor" data-setor="{{ s }}">{{ s }}</button>{% endfor %}
+        </div>
+        {% endif %}
+        </div>
+        <nav class="rel-lista">
+            {% for s in setores %}
+            <div class="rel-grupo" data-setor="{{ s }}">
+                <div class="rel-grupo-titulo">{{ s }}</div>
+                <div class="rel-grupo-itens">
+                {% for r in relatorios if r.setor == s %}
+                <a class="rel-item {{ 'ativo' if rel and rel.chave == r.chave }}" href="/relatorios?r={{ r.chave }}"
+                   data-busca="{{ (r.titulo ~ ' ' ~ r.descricao ~ ' ' ~ r.busca ~ ' ' ~ r.setor)|lower }}">
+                    <i data-lucide="{{ r.icone }}"></i>
+                    <span class="rel-item-texto">
+                        <span class="rel-item-titulo">{{ r.titulo }}</span>
+                        <span class="rel-item-desc">{{ r.descricao }}</span>
+                    </span>
+                </a>
+                {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            <p class="rel-nada" id="rel-nada" hidden>Nenhum relatório com esse nome.</p>
+        </nav>
+        </div>
+    </section>
+
+    {% if not rel %}
+    <p class="nota rel-dica">Todos abrem com um período padrão e podem ser filtrados, baixados em Excel ou impressos.</p>
+    {% endif %}
+    <section class="rel-painel" id="relatorio" {{ "hidden" if not rel }}>
+        {% if rel %}
+        <div class="rel-topo">
+            <div>
+                <div class="rel-setor-rotulo">{{ rel.setor }}</div>
+                <h2 class="rel-titulo">{{ rel.titulo }}</h2>
+                <p class="rel-desc">{{ rel.descricao }}</p>
+            </div>
+            <div class="rel-acoes">
+                <a class="btn btn-secundario-claro" href="/relatorios/{{ rel.chave }}/excel?{{ query }}"><i data-lucide="sheet"></i>Excel</a>
+                <button type="button" class="btn btn-secundario-claro" onclick="window.print()"><i data-lucide="printer"></i>Imprimir / PDF</button>
+            </div>
+        </div>
+
+        {% set fs = rel.filtros %}
+        <form class="rel-filtros" method="get" action="/relatorios" id="rel-filtros">
+            <input type="hidden" name="r" value="{{ rel.chave }}">
+            {% if "modo" in fs and rel.modos %}
+            <label class="rel-filtro">
+                <span>Mostrar</span>
+                <select name="modo">
+                    {% for v, rot in rel.modos %}<option value="{{ v }}" {{ "selected" if f.modo == v }}>{{ rot }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            {% set usa_periodo = "periodo" in fs and (not rel.periodo_so_no_modo or f.modo == rel.periodo_so_no_modo) %}
+            {% if usa_periodo %}
+            <label class="rel-filtro">
+                <span>Período</span>
+                <select name="periodo" id="rel-periodo">
+                    {% for v, rot in periodos %}<option value="{{ v }}" {{ "selected" if f.periodo == v }}>{{ rot }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="rel-filtro rel-datas" {{ "hidden" if f.periodo != "personalizado" }}>
+                <span>De</span><input type="date" name="de" value="{{ f.de.isoformat() if f.de }}">
+            </label>
+            <label class="rel-filtro rel-datas" {{ "hidden" if f.periodo != "personalizado" }}>
+                <span>Até</span><input type="date" name="ate" value="{{ f.ate.isoformat() if f.ate }}">
+            </label>
+            {% endif %}
+            {% if "dias" in fs %}
+            <label class="rel-filtro">
+                <span>Sem contato há pelo menos</span>
+                <select name="dias">
+                    {% for d in (15, 30, 60, 90, 180) %}<option value="{{ d }}" {{ "selected" if f.dias == d }}>{{ d }} dias</option>{% endfor %}
+                    {% if f.dias not in (15, 30, 60, 90, 180) %}<option value="{{ f.dias }}" selected>{{ f.dias }} dias</option>{% endif %}
+                </select>
+            </label>
+            {% endif %}
+            {% if "agrupar" in fs and f.agrupar %}
+            <label class="rel-filtro">
+                <span>Ver por</span>
+                <select name="agrupar">
+                    {% for v, rot in rel.agrupar if not (user.role == "vendedor" and v == "vendedor") %}
+                    <option value="{{ v }}" {{ "selected" if f.agrupar == v }}>{{ rot }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            {% if "situacao" in fs %}
+            <label class="rel-filtro">
+                <span>Situação</span>
+                <select name="situacao">
+                    <option value="">Todas</option>
+                    {% for s in situacoes %}<option value="{{ s }}" {{ "selected" if f.situacao == s }}>{{ s }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            {% if "vendedor" in fs and user.role != "vendedor" %}
+            <label class="rel-filtro">
+                <span>Vendedor</span>
+                <select name="vendedor">
+                    <option value="">Todos</option>
+                    {% for v in vendedores %}<option value="{{ v }}" {{ "selected" if f.vendedor == v }}>{{ v }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            {% if "uf" in fs %}
+            <label class="rel-filtro rel-filtro-curto">
+                <span>Estado</span>
+                <select name="uf">
+                    <option value="">Todos</option>
+                    {% for uf in estados %}<option value="{{ uf }}" {{ "selected" if f.uf == uf }}>{{ uf }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            {% if "produto" in fs %}
+            <label class="rel-filtro">
+                <span>Produto</span>
+                <select name="produto">
+                    <option value="">Todos</option>
+                    {% for p in produtos %}<option value="{{ p }}" {{ "selected" if f.produto == p }}>{{ p }}</option>{% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            <button type="submit" class="btn btn-primario rel-aplicar" {{ "hidden" if f.periodo != "personalizado" }}>Aplicar</button>
+            <noscript><button type="submit" class="btn btn-primario">Aplicar</button></noscript>
+        </form>
+
+        {# So aparece no papel: o que e, com quais filtros e quando foi tirado #}
+        <div class="so-impressao rel-impressao-cab">
+            <img src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso">
+            <div>
+                <strong>{{ rel.titulo }}</strong>
+                <span>Gerado em {{ gerado_em.strftime("%d/%m/%Y %H:%M") }} por {{ user.nome_completo }}</span>
+            </div>
+        </div>
+        <p class="rel-resumo">{{ resumo_filtros }}</p>
+
+        <div class="rel-numeros">
+            {% for rotulo, valor in res.totais %}
+            <div class="rel-numero">
+                <span class="numeros-rotulo">{{ rotulo }}</span>
+                <span class="rel-numero-valor">{{ valor }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% if res.nota %}<p class="nota rel-nota"><i data-lucide="info"></i>{{ res.nota }}</p>{% endif %}
+        {% if res.acao_ibge %}
+        <form method="post" action="/admin/area-estados/atualizar" class="rel-acao-ibge">
+            <button type="submit" class="btn btn-secundario-claro" title="O IBGE publica o ano anterior em setembro/outubro">
+                <i data-lucide="refresh-cw"></i>Buscar ano novo no IBGE</button>
+        </form>
+        {% endif %}
+
+        {% if res.linhas %}
+        {{ tabela_rel(res, res.celulas or [], res.ver) }}
+        {% if res.linhas|length > limite %}
+        <p class="nota rel-limite">Mostrando {{ limite }} de {{ res.linhas|length|numbr(0) }} linhas. O Excel traz todas.</p>
+        {% endif %}
+        {% if res.ver %}
+        <section class="rel-detalhe">
+            <div class="rel-detalhe-cab">
+                <h3 id="detalhe">{{ res.ver.titulo }}</h3>
+                <div class="rel-acoes">
+                    <a class="btn btn-secundario-claro" href="/relatorios/{{ rel.chave }}/excel?{{ query }}"><i data-lucide="sheet"></i>Excel com a lista</a>
+                    <a class="btn btn-secundario-claro" href="/relatorios?{{ query_base }}"><i data-lucide="x"></i>Fechar</a>
+                </div>
+            </div>
+            {% if res.ver.linhas %}{{ tabela_rel(res.ver) }}{% else %}<p class="nota">Nenhum cliente.</p>{% endif %}
+            {% if res.ver.linhas|length > limite %}
+            <p class="nota rel-limite">Mostrando {{ limite }} de {{ res.ver.linhas|length|numbr(0) }} clientes. O Excel traz todos.</p>
+            {% endif %}
+        </section>
+        {% endif %}
+        {% else %}
+        <div class="rel-sem-dados">
+            <i data-lucide="search-x"></i>
+            <p>Nada encontrado com esses filtros.</p>
+            {% if usa_periodo and f.periodo != "tudo" %}
+            <a href="{{ url_tudo }}">Ver todo o período</a>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+    </section>
+</div>
+
+<script>
+function abrirCatalogo() {
+    var cat = document.getElementById("catalogo");
+    var aberto = cat.classList.toggle("recolhido") === false;
+    cat.querySelector(".rel-trocar").setAttribute("aria-expanded", aberto);
+    if (aberto) document.getElementById("rel-busca").focus();
+}
+(function () {
+    // Busca e setor filtram a lista na hora, sem recarregar
+    var campo = document.getElementById("rel-busca");
+    var setorAtual = "";
+    function semAcento(t) { return t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+    function filtrar() {
+        var termos = semAcento(campo.value.trim()).split(/\s+/).filter(Boolean);
+        var algum = false;
+        document.querySelectorAll(".rel-grupo").forEach(function (grupo) {
+            var visiveis = 0;
+            var doSetor = !setorAtual || grupo.dataset.setor === setorAtual;
+            grupo.querySelectorAll(".rel-item").forEach(function (item) {
+                var texto = semAcento(item.dataset.busca);
+                var ok = doSetor && termos.every(function (t) { return texto.indexOf(t) >= 0; });
+                item.hidden = !ok;
+                if (ok) visiveis++;
+            });
+            grupo.hidden = visiveis === 0;
+            if (visiveis) algum = true;
+        });
+        document.getElementById("rel-nada").hidden = algum;
+    }
+    campo.addEventListener("input", filtrar);
+    campo.addEventListener("keydown", function (ev) {
+        if (ev.key !== "Enter") return;
+        var primeiro = document.querySelector(".rel-item:not([hidden])");
+        if (primeiro) window.location = primeiro.href;
+    });
+    document.querySelectorAll(".rel-setor").forEach(function (botao) {
+        botao.addEventListener("click", function () {
+            document.querySelectorAll(".rel-setor").forEach(function (b) { b.classList.remove("ativo"); });
+            botao.classList.add("ativo");
+            setorAtual = botao.dataset.setor;
+            filtrar();
+        });
+    });
+
+    // Filtros: escolher ja aplica (so as datas precisam do botao)
+    var form = document.getElementById("rel-filtros");
+    if (!form) return;
+    var periodo = document.getElementById("rel-periodo");
+    form.querySelectorAll("select").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+            if (sel === periodo && periodo.value === "personalizado") {
+                form.querySelectorAll(".rel-datas, .rel-aplicar").forEach(function (el) { el.hidden = false; });
+                form.querySelector("input[name=de]").focus();
+                return;
+            }
+            if (sel === periodo) form.querySelectorAll(".rel-datas input").forEach(function (i) { i.value = ""; });
+            form.submit();
+        });
+    });
+})();
+</script>
+{% endblock %}

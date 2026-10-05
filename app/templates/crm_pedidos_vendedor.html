@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Pedidos em aberto{% endblock %}
+{% block content %}
+<div class="pagina-cab">
+    <div>
+        <h1>Pedidos em aberto</h1>
+        <p class="pagina-sub">{% if filtro_vencidos == "1" %}{{ pedidos|length }} vencido{{ "s" if pedidos|length != 1 }} de {{ total_abertos }} em aberto{% else %}{{ total_abertos }} pedido{{ "s" if total_abertos != 1 }} aguardando retirada{% endif %}</p>
+    </div>
+    <div class="pagina-acoes">
+        {% if filtro_vencidos == "1" %}
+        <a class="back-btn" href="/vendedor/crm/pedidos">Ver todos os pedidos em aberto</a>
+        {% else %}
+        <a class="back-btn" href="/vendedor/crm/pedidos?vencidos=1"><i data-lucide="triangle-alert"></i>Só os vencidos</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="table-wrap">
+<table class="tabela">
+    <thead>
+        <tr>
+            <th>Cliente</th><th>Produto / Pedido</th><th>A entregar (t)</th>
+            <th>Prazo para retirar</th><th>Dias restantes</th><th>Ton/dia necessário</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pedidos %}
+        <tr class="{% if p.vencido() %}linha-vencida{% endif %}">
+            <td><a href="/crm/cliente/{{ p.cliente.id }}?aba=pedidos&via=pedidos">{{ p.cliente.fazenda }}</a></td>
+            <td>{{ p.produto }} · {{ p.codigo }}</td>
+            <td>{{ p.volume_total_a_entregar()|numbr(1) }}</td>
+            <td>{{ p.data_limite_retirada.strftime("%d/%m/%Y") if p.data_limite_retirada else "Sem prazo" }}</td>
+            <td>{{ p.dias_restantes() if p.dias_restantes() is not none else "—" }}</td>
+            <td>
+                {% if p.vencido() %}<span class="badge-vencido">VENCIDO</span>
+                {% elif p.ton_dia_necessario() is not none %}{{ p.ton_dia_necessario()|numbr }}
+                {% else %}—{% endif %}
+            </td>
+            <td><a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/{{ p.cliente.id }}?aba=pedidos&via=pedidos">Ver pedido</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Nenhum pedido {{ "vencido" if filtro_vencidos == "1" else "em aberto" }}.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

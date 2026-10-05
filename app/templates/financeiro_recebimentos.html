@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Recebimentos{% endblock %}
+{% block content %}
+<style>.fab { display: none !important; }</style>{# o "+" de cadastrar cliente cobria o "Registrar" no celular #}
+{# Recebimentos (Rafael, 2026-10-04): a comissao do vendedor so e liberada sobre o que a empresa recebeu.
+   O financeiro registra cada pagamento de carga a carga, a prazo e plano safra. Logica em financeiro_routes.py
+   e comissao.py. #}
+<div class="pagina-cab">
+    <div>
+        <h1>Recebimentos</h1>
+        <p class="pagina-sub">Registre cada pagamento que entrou. A comissão do vendedor é liberada sobre o valor recebido.
+            O à vista entra sozinho quando você confirma o comprovante em <a href="/financeiro/pagamentos">Pagamentos a confirmar</a>.</p>
+    </div>
+</div>
+
+{# Uma linha por pedido; "Registrar" abre o formulario ali mesmo (telas compactas, Rafael 2026-10-04) #}
+{% if grupos %}
+{% for titulo, nota, itens in grupos %}
+<h2 class="secao-titulo" {% if loop.first %}style="margin-top:0;"{% endif %}>{{ titulo }} <span class="rec-conta">{{ itens|length }}</span></h2>
+{% if nota %}<p class="nota" style="margin-top:-4px;">{{ nota }}</p>{% endif %}
+<div class="rec-lista">
+    {% for p, forma in itens %}
+    <details class="rec-item" id="rec-{{ p.id }}">
+        <summary>
+            <span class="rec-info">
+                <span class="rec-l1"><b>{{ p.codigo }}</b> · {{ p.cliente.fazenda }} <span class="rec-vend">{{ p.cliente.vendedor_nome or "sem vendedor" }}</span></span>
+                <span class="rec-l2">{{ forma }} · {{ nome_produto.get(p.produto, p.produto) }} {{ p.volume|numbr(0) }} t a {{ reais(p.preco) }}/t
+                    · {{ "comissão " ~ (p.comissao_pct|string).replace('.0', '').replace('.', ',') ~ "%" if p.comissao_pct is not none else "sem comissão" }}</span>
+            </span>
+            <span class="rec-direita">
+                <span class="rec-falta"><b>{{ reais(p.a_receber()) }}</b>
+                    <span>a receber{% if p.recebido() >= 0.01 %} de {{ reais(p.valor_total()) }}{% endif %}</span></span>
+                <span class="btn btn-secundario-claro rec-abrir"><i data-lucide="hand-coins"></i>Registrar</span>
+            </span>
+        </summary>
+        <form method="post" action="/financeiro/recebimentos/{{ p.id }}" class="rec-form">
+            <label>Valor recebido<input type="text" name="valor" inputmode="decimal" placeholder="ex.: 15.000,00" required></label>
+            <label>Data<input type="date" name="data" value="{{ hoje.isoformat() }}" max="{{ hoje.isoformat() }}" required></label>
+            <label class="rec-obs">Observação<input type="text" name="observacao" maxlength="200" placeholder="ex.: 2ª carga, parcela 30 dias"></label>
+            <button type="submit" class="btn btn-primario">Registrar</button>
+        </form>
+    </details>
+    {% endfor %}
+</div>
+{% endfor %}
+{% else %}
+<p class="nota">Nenhum pedido com valor a receber.</p>
+{% endif %}
+<script>
+// Volta de um registro (#rec-N): abre a linha do pedido
+(function () {
+    var m = location.hash.match(/^#rec-(\d+)$/);
+    var el = m && document.getElementById("rec-" + m[1]);
+    if (el) { el.open = true; }
+})();
+</script>
+
+<h2 class="secao-titulo">Últimos recebimentos</h2>
+{% if ultimos %}
+<div class="table-wrap"><table class="tabela">
+    <thead><tr><th>Data</th><th>Pedido</th><th>Cliente</th><th class="num">Valor</th><th class="num">Comissão</th><th>Origem</th><th></th></tr></thead>
+    <tbody>
+    {% for r in ultimos %}
+    <tr>
+        <td>{{ r.data.strftime("%d/%m/%Y") }}</td>
+        <td>{{ r.pedido.codigo }}</td>
+        <td>{{ r.pedido.cliente.fazenda }}<span class="sub">{{ r.pedido.cliente.vendedor_nome or "" }}</span></td>
+        <td class="num">{{ reais(r.valor) }}</td>
+        <td class="num">{{ reais(r.valor * r.comissao_pct / 100) if r.comissao_pct is not none else "—" }}</td>
+        <td>{{ {"comprovante": "Comprovante à vista", "ajuste": "Ajuste (pedido antigo)"}.get(r.origem, "Registrado") }}<span class="sub">{{ r.registrado_por or "" }}{{ " · " ~ r.observacao if r.observacao }}</span></td>
+        <td>{% if r.origem in ("financeiro", "ajuste") %}
+            <form method="post" action="/financeiro/recebimentos/{{ r.id }}/desfazer" onsubmit="return confirm('Desfazer este recebimento? A comissão volta a ficar a liberar.');">
+                <button type="submit" class="btn-rev-desfazer">Desfazer</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table></div>
+{% else %}
+<p class="nota">Nenhum recebimento registrado ainda.</p>
+{% endif %}
+{% endblock %}

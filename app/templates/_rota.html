@@ -1,0 +1,135 @@
+{# Rota das plantas ate o cliente, numa janela DENTRO do portal (rotas.py).
+   Uso: abrirRota("pedido=123") | abrirRota("cliente=45") | abrirRota("uf=PA&cidade=Paragominas").
+   Fechar (X, Esc, clique fora ou "Voltar") deixa a pessoa exatamente onde estava.
+   O Leaflet so e carregado na primeira vez que a janela abre. #}
+<dialog id="rota-dialogo" class="rota-dialogo" aria-labelledby="rota-titulo">
+    <div class="rota-cab">
+        <div>
+            <h2 id="rota-titulo">Rota</h2>
+            <p class="rota-sub" id="rota-sub"></p>
+        </div>
+        <button type="button" class="btn-icone btn-icone-limpo" onclick="fecharRota()" aria-label="Fechar"><i data-lucide="x"></i></button>
+    </div>
+    <div class="rota-plantas" id="rota-plantas" role="radiogroup" aria-label="Planta de origem"></div>
+    <div id="rota-mapa" class="rota-mapa"></div>
+    <p class="rota-nota" id="rota-nota"></p>
+    <div class="rota-acoes">
+        <button type="button" class="btn btn-primario" onclick="fecharRota()">Voltar</button>
+        <a id="rota-google" class="rota-google" href="#" target="_blank" rel="noopener" hidden>
+            <i data-lucide="navigation"></i>Navegar no Google Maps <span>(abre fora do portal)</span></a>
+    </div>
+</dialog>
+<script>
+(function () {
+    var dialogo = document.getElementById("rota-dialogo");
+    var mapa = null, camadas = null, dados = null;
+
+    function esc(t) {
+        return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) {
+            return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+        });
+    }
+    function tempo(min) {
+        if (min == null) return "";
+        var h = Math.floor(min / 60), m = Math.round(min % 60);
+        return h ? h + " h" + (m ? " " + m + " min" : "") : m + " min";
+    }
+    function carregarLeaflet() {
+        if (window.L) return Promise.resolve();
+        return new Promise(function (ok, falha) {
+            var css = document.createElement("link");
+            css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+            css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="; css.crossOrigin = "";
+            document.head.appendChild(css);
+            var js = document.createElement("script");
+            js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+            js.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="; js.crossOrigin = "";
+            js.onload = ok; js.onerror = falha;
+            document.head.appendChild(js);
+        });
+    }
+    function prepararMapa() {
+        if (mapa) { camadas.clearLayers(); mapa.invalidateSize(); return; }
+        mapa = L.map("rota-mapa", {scrollWheelZoom: true});
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(mapa);
+        camadas = L.layerGroup().addTo(mapa);
+    }
+    function etiqueta(texto, classe) {
+        return L.divIcon({className: "rota-etiqueta " + classe, html: "<span>" + esc(texto) + "</span>", iconSize: null});
+    }
+    function desenhar(escolhida) {
+        camadas.clearLayers();
+        var limites = [dados.destino];
+        dados.rotas.forEach(function (r, i) {
+            var sel = i === escolhida;
+            if (r.trajeto) {
+                L.polyline(r.trajeto, sel ? {color: "#33247A", weight: 5, opacity: .9}
+                                          : {color: "#8B899A", weight: 3, opacity: .7, dashArray: "6 6"}).addTo(camadas);
+                limites = limites.concat(sel ? r.trajeto : []);
+            } else if (sel) {
+                L.polyline([r.origem, dados.destino], {color: "#8B899A", weight: 2, dashArray: "4 6"}).addTo(camadas);
+            }
+            L.marker(r.origem, {icon: etiqueta("Planta " + r.planta.split("/")[0], sel ? "rota-etq-planta sel" : "rota-etq-planta")})
+                .addTo(camadas);
+            limites.push(r.origem);
+        });
+        L.marker(dados.destino, {icon: etiqueta(dados.titulo, "rota-etq-destino")}).addTo(camadas);
+        mapa.fitBounds(limites, {padding: [30, 30]});
+    }
+    function escolher(i) {
+        document.querySelectorAll("#rota-plantas .rota-planta").forEach(function (b, j) {
+            b.classList.toggle("sel", j === i); b.setAttribute("aria-checked", j === i ? "true" : "false");
+        });
+        var r = dados.rotas[i];
+        var g = document.getElementById("rota-google");
+        g.href = r.google; g.hidden = false;
+        var notas = [];
+        if (r.aproximado) notas.push("Ponto da planta aproximado (centro de " + r.planta.split("/")[0] + ") até termos a localização exata.");
+        if (!dados.exato) notas.push("Destino no centro da cidade: a fazenda pode ficar a alguns km.");
+        if (r.km == null) notas.push("Não conseguimos calcular a estrada agora; a distância mostrada é em linha reta.");
+        else notas.push("Tempo estimado de carro; caminhão carregado leva mais.");
+        document.getElementById("rota-nota").textContent = notas.join(" ");
+        desenhar(i);
+    }
+    window.abrirRota = function (params) {
+        if (dialogo.open) dialogo.close();
+        document.getElementById("rota-titulo").textContent = "Rota das plantas";
+        document.getElementById("rota-sub").textContent = "";
+        document.getElementById("rota-plantas").innerHTML = '<p class="rota-carregando">Calculando a rota de estrada...</p>';
+        document.getElementById("rota-nota").textContent = "";
+        document.getElementById("rota-google").hidden = true;
+        dialogo.showModal();
+        if (window.lucide) lucide.createIcons();
+        Promise.all([carregarLeaflet(), fetch("/api/rota?" + params).then(function (r) { return r.json(); })])
+            .then(function (res) {
+                dados = res[1];
+                var caixa = document.getElementById("rota-plantas");
+                if (dados.erro) { caixa.innerHTML = '<p class="rota-erro">' + esc(dados.erro) + "</p>"; return; }
+                document.getElementById("rota-titulo").textContent = "Rota até " + dados.titulo;
+                document.getElementById("rota-sub").textContent = dados.descricao;
+                caixa.innerHTML = dados.rotas.map(function (r, i) {
+                    return '<button type="button" class="rota-planta" role="radio" data-i="' + i + '">'
+                        + '<span class="rota-planta-nome">Saindo de ' + esc(r.planta) + (i === 0 ? ' <em>mais perto</em>' : "") + "</span>"
+                        + (r.km != null
+                            ? '<strong>' + r.km.toLocaleString("pt-BR") + " km</strong><span>" + tempo(r.minutos) + " de estrada</span>"
+                            : "<strong>" + r.linha_reta_km.toLocaleString("pt-BR") + " km</strong><span>em linha reta (estrada não calculada)</span>")
+                        + "</button>";
+                }).join("");
+                caixa.querySelectorAll(".rota-planta").forEach(function (b) {
+                    b.addEventListener("click", function () { escolher(+b.dataset.i); });
+                });
+                prepararMapa();
+                escolher(0);
+            })
+            .catch(function () {
+                document.getElementById("rota-plantas").innerHTML =
+                    '<p class="rota-erro">Não foi possível carregar a rota agora (sem internet?). Tente de novo em instantes.</p>';
+            });
+    };
+    window.fecharRota = function () { dialogo.close(); };
+    // Clique fora da janela fecha
+    dialogo.addEventListener("click", function (e) { if (e.target === dialogo) dialogo.close(); });
+})();
+</script>

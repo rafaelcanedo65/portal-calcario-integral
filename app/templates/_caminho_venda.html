@@ -1,0 +1,238 @@
+{# Caminho da venda (Rafael, 2026-10-02): um trilho por negocio, como cada
+   encomenda tem o seu rastreio nos Correios. Contato no topo (e do cliente),
+   uma linha por proposta/pedido em andamento com o botao do proximo passo, e
+   o que ja foi concluido no ciclo recolhido. Acoes abrem AQUI embaixo
+   (inclusive o Gerar pedido). Calculo em _caminho_venda. #}
+{% set q_via = ('?via=' ~ via) if via else '' %}
+{% set cv = caminho_venda %}
+<section class="caminho" id="caminho-venda" aria-label="Caminho da venda">
+    {% if not cv.encerramento %}
+    <div class="cv-contato">
+        <span class="cv-ponto {{ 'cv-ok' if cv.contato.feito else 'cv-agora' }}"><i data-lucide="{{ 'check' if cv.contato.feito else 'phone' }}"></i></span>
+        <span class="cv-contato-texto"><b>Contato</b>
+            {% if cv.contato.resumo %}· {{ cv.contato.resumo }} em {{ cv.contato.quando.strftime("%d/%m") }}
+            {% elif cv.contato.feito %}· sem conversa registrada no portal
+            {% else %}· ainda não houve conversa{% endif %}</span>
+        {% if not cv.contato.feito %}<button type="button" onclick="irPara('comentario', 'form-contato')">Registrar contato</button>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if motivo_prioritario %}
+    {# Mesma cor da etiqueta desse motivo na fila de trabalho (COR_TIER) #}
+    <div class="caminho-alerta acao-{{ motivo_prioritario.cor }}">
+        <i data-lucide="zap"></i>
+        <span>{{ motivo_prioritario.texto }}</span>
+        <button type="button" class="caminho-alerta-ir"
+                onclick="irPara('{{ motivo_prioritario.aba }}', '{{ 'form-contato' if motivo_prioritario.aba == 'comentario' else '' }}')">Resolver<i data-lucide="arrow-right"></i></button>
+    </div>
+    {% endif %}
+
+    {% if cv.encerramento %}
+    {# Cliente perdido / nao usara: o trilho mostra em que etapa a venda parou (Rafael, 2026-10-02) #}
+    {% set en = cv.encerramento %}
+    <div class="cv-negocio cv-encerrado" id="negocio-encerrado">
+        <div class="cv-neg-nome"><b>Negociação encerrada</b><span>{{ en.rotulo }}{{ " em " ~ en.quando.strftime("%d/%m/%Y") if en.quando }}{{ " · " ~ en.autor if en.autor }}</span></div>
+        <ol class="cv-trilho" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+            {% for e in en.etapas %}
+            <li class="cv-passo cv-{{ e.estado }}" data-etapa="{{ e.chave }}"
+                title="{{ e.rotulo }}{{ ' · ' ~ e.quando.strftime('%d/%m/%Y') if e.quando }}{{ ' · não houve' if e.estado == 'pulado' }}">
+                <span class="cv-ponto">{% if e.estado == "feito" %}<i data-lucide="check"></i>{% elif e.estado == "perdido" %}<i data-lucide="x"></i>{% elif e.estado == "nao_usara" %}<i data-lucide="circle-off"></i>{% endif %}</span>
+                <span class="cv-nome">{{ e.rotulo }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        <div class="cv-neg-acao"><button type="button" class="btn-secondary" onclick="irPara('comentario', 'form-contato')">Cliente voltou a negociar</button></div>
+        <div class="cv-neg-status">
+            <b class="cv-sit {{ 'cv-sit-red' if en.perdido else '' }}">{{ en.motivo or en.rotulo }}</b>{% if en.detalhe %} · {{ en.detalhe }}{% endif %}
+            · {% if en.reavaliar %}reavaliar em {{ en.reavaliar.strftime("%d/%m/%Y") }}{% else %}sem data para reavaliar{% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% for n in cv.negocios %}
+    {% set o = n.obj %}
+    <div class="cv-negocio" id="negocio-{{ n.tipo }}-{{ o.id }}">
+        <div class="cv-neg-nome"><b>{{ n.titulo }}</b><span>{{ n.sub }}</span></div>
+        <ol class="cv-trilho">
+            {% for e in n.etapas %}
+            <li class="cv-passo cv-{{ e.estado }}" data-etapa="{{ e.chave }}"
+                title="{{ e.rotulo }}{{ ' · ' ~ e.quando.strftime('%d/%m/%Y') if e.quando }}">
+                {% if e.pct is not none %}
+                {# Quanto ja foi carregado (vem do NetSuite); concluido vira o check de "feito" #}
+                <span class="cv-ponto cv-ponto-pct" style="--pct: {{ e.pct }};"><b>{{ e.pct }}%</b></span>
+                {% else %}
+                <span class="cv-ponto">{% if e.estado == "feito" %}<i data-lucide="check"></i>{% endif %}</span>
+                {% endif %}
+                <span class="cv-nome">{{ e.rotulo }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        <div class="cv-neg-acao">
+            {% if n.acao == "gerar_pedido" %}
+            <button type="button" onclick="abrirGerarPedido({{ o.id }})">Gerar pedido</button>
+            {% elif n.acao == "comprovante" and user.role in ("admin", "vendedor") %}
+            <button type="button" onclick="var f = document.getElementById('cv-comp-{{ o.id }}'); f.style.display = ''; levarAte(f);">Enviar comprovante</button>
+            {% elif n.acao == "finalizar" and user.role in ("admin", "vendedor") %}
+            <button type="button" class="btn-secondary" onclick="irPara('pedidos', 'finalizar-{{ o.id }}')">Finalizar</button>
+            {% endif %}
+        </div>
+        <div class="cv-neg-status"><b class="cv-sit cv-sit-{{ n.cor }}">{{ n.status }}</b>{% if n.regra %} · {{ n.regra }}{% endif %}</div>
+    </div>
+
+    {% if n.acao == "comprovante" and user.role in ("admin", "vendedor") %}
+    <form id="cv-comp-{{ o.id }}" method="post" action="/crm/cliente/{{ cliente.id }}/pedido/{{ o.id }}/comprovante"
+          enctype="multipart/form-data" class="cv-form pagamento-bloqueio-form" style="display:none;">
+        <input type="file" name="comprovante" accept=".pdf,.jpg,.jpeg,.png" required>
+        <button type="submit"><i data-lucide="upload"></i> Enviar para o financeiro</button>
+    </form>
+    {% endif %}
+
+    {% if n.acao == "gerar_pedido" %}
+    {% set p = o %}
+    {% set aberto = gerar_pedido_aberto == p.id %}
+    {% set v = gerar_pedido_valores if aberto else {} %}
+    {% set subs = subsidiarias_por_produto.get(p.produto, []) %}
+    <div id="gp-{{ p.id }}" class="cv-form" {% if not aberto %}style="display:none;"{% endif %}>
+        {% if aberto and erro %}<div class="erro" style="margin-bottom:10px;">{{ erro }}</div>{% endif %}
+        {# data-guiado: depois de cada campo, a tela aponta o proximo (base.html) #}
+        <form method="post" action="/crm/cliente/{{ cliente.id }}/proposta/{{ p.id }}/gerar-pedido{{ q_via }}" enctype="multipart/form-data" data-guiado>
+            {% set ativos = pedidos_ativos_por_produto.get(p.produto, []) %}
+            {% if ativos %}
+            {# Mesmo produto com pedido em andamento: compra a mais ou a mesma venda renegociada? (Rafael, 2026-10-02) #}
+            <div class="gp-duplicado" id="gp-dup-{{ p.id }}">
+                <div class="gp-duplicado-titulo"><i data-lucide="triangle-alert"></i>
+                    Este cliente já tem {{ "pedidos" if ativos|length > 1 else "pedido" }} de {{ p.produto }} em andamento:
+                    {% for a in ativos %}{{ a.codigo }} ({{ a.volume_total_a_entregar()|numbr(0) }} t{% if a.volume_retirado is not none and a.volume_total_a_entregar() %}, {{ [100, (a.volume_retirado / a.volume_total_a_entregar() * 100)|round|int]|min }}% carregado{% endif %}){{ ", " if not loop.last }}{% endfor %}.
+                </div>
+                <div class="rc-chips">
+                    <label class="rc-chip"><input type="radio" name="confirma_adicional" value="adicional" required
+                        {% if v.confirma_adicional == "adicional" %}checked{% endif %}
+                        onchange="document.getElementById('gp-reneg-{{ p.id }}').hidden = true; document.getElementById('gp-campos-{{ p.id }}').hidden = false;">É uma compra a mais</label>
+                    <label class="rc-chip"><input type="radio" name="confirma_adicional" value="renegociacao" required
+                        onchange="document.getElementById('gp-reneg-{{ p.id }}').hidden = false; document.getElementById('gp-campos-{{ p.id }}').hidden = true;">É uma nova negociação do mesmo pedido</label>
+                </div>
+                <div id="gp-reneg-{{ p.id }}" class="gp-reneg" hidden>
+                    Então não gere um pedido novo: isso contaria a mesma venda duas vezes. Renegocie o pedido que já existe
+                    (preço, volume ou pagamento).
+                    <div class="btn-row" style="margin-top:8px;">
+                        {% for a in ativos %}<button type="button" class="btn-gold" onclick="irPara('pedidos', 'renegociar-{{ a.id }}')">Renegociar pedido {{ a.codigo }}</button>{% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <div id="gp-campos-{{ p.id }}" {% if ativos and v.confirma_adicional != "adicional" %}hidden{% endif %}>
+            <div class="ficha-grid">
+                {% if subs %}
+                <div class="field2"><label>Subsidiária que vai faturar</label>
+                    <select name="subsidiaria_cnpj" required>
+                        <option value="">Selecione...</option>
+                        {% for s in subs %}<option value="{{ s.cnpj }}" {% if v.subsidiaria_cnpj == s.cnpj %}selected{% endif %}>{{ s.nome }} (atende {{ s.regiao }})</option>{% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="field2"><label>Faturar em nome do próprio cliente?</label>
+                    <select name="faturamento_tipo" required
+                            onchange="var b = document.getElementById('terceiro-{{ p.id }}'); b.style.display = this.value === 'terceiro' ? '' : 'none'; if (this.value === 'terceiro') levarAte(b);">
+                        <option value="">Selecione...</option>
+                        <option value="cliente" {% if v.faturamento_tipo == "cliente" %}selected{% endif %}>Sim, faturar para o cliente</option>
+                        <option value="terceiro" {% if v.faturamento_tipo == "terceiro" %}selected{% endif %}>Não, para outro CNPJ/CPF</option>
+                    </select>
+                </div>
+            </div>
+            {% if not subs %}<p class="cv-nota">Ainda não há subsidiária cadastrada para {{ p.produto }}: o pedido sai sem essa informação.</p>{% endif %}
+            {% if cliente.entrega_em_outro_lugar() %}
+            <p class="cv-nota cv-nota-destino"><i data-lucide="truck"></i>{{ cliente.fazenda }} não recebe o produto: a entrega é no destino final.
+                Depois de gerar o pedido, registre em "Destino final" para quais fazendas vai — é o endereço que a Logística usa.</p>
+            {% endif %}
+            <div id="terceiro-{{ p.id }}" class="ficha-grid" {% if v.faturamento_tipo != "terceiro" %}style="display:none;"{% endif %}>
+                <div class="field2"><label>Nome / Razão social *</label><input type="text" name="fat_nome" value="{{ v.fat_nome or '' }}"></div>
+                <div class="field2"><label>CPF ou CNPJ *</label><input type="text" name="fat_documento" value="{{ v.fat_documento or '' }}"></div>
+                <div class="field2"><label>Telefone</label><input type="text" name="fat_telefone" placeholder="(opcional)" value="{{ v.fat_telefone or '' }}"></div>
+                <div class="field2"><label>Endereço</label><input type="text" name="fat_endereco" placeholder="(opcional)" value="{{ v.fat_endereco or '' }}"></div>
+            </div>
+            {% if p.pagamento == "A prazo" %}
+            {# A prazo carrega direto; o que fica combinado e como o cliente paga (Rafael, 2026-10-02) #}
+            <div class="ficha-grid">
+                <div class="field2"><label>Como o cliente vai pagar? *</label>
+                    <select name="forma_prazo" required
+                            onchange="document.getElementById('boleto-{{ p.id }}').style.display = this.value === 'boleto' ? '' : 'none'; document.getElementById('periodo-{{ p.id }}').style.display = this.value === 'periodo' ? '' : 'none';">
+                        <option value="">Selecione...</option>
+                        <option value="boleto" {% if v.forma_prazo == "boleto" %}selected{% endif %}>Boleto após a 1ª carga</option>
+                        <option value="sobre_rodas" {% if v.forma_prazo == "sobre_rodas" %}selected{% endif %}>Sobre rodas (paga cada carga antes da próxima)</option>
+                        <option value="periodo" {% if v.forma_prazo == "periodo" %}selected{% endif %}>Puxa por um período e paga depois</option>
+                    </select>
+                </div>
+                <div class="field2" id="boleto-{{ p.id }}" {% if v.forma_prazo != "boleto" %}style="display:none;"{% endif %}><label>Parcelas do boleto</label>
+                    <select name="prazo_parcelas">
+                        <option value="30" {% if v.prazo_parcelas == "30" %}selected{% endif %}>30 dias</option>
+                        <option value="30/60/90" {% if v.prazo_parcelas == "30/60/90" %}selected{% endif %}>30/60/90 dias</option>
+                    </select>
+                </div>
+                <div class="field2" id="periodo-{{ p.id }}" {% if v.forma_prazo != "periodo" %}style="display:none;"{% endif %}><label>Período (dias)</label>
+                    <input type="number" name="prazo_periodo_dias" min="1" max="90" value="{{ v.prazo_periodo_dias or 7 }}">
+                </div>
+            </div>
+            <p class="cv-nota">Boleto: se a 1ª parcela não for paga no vencimento, o carregamento é bloqueado na portaria até o pagamento.</p>
+            {% endif %}
+            <div class="ficha-grid">
+                <div class="field2"><label>Data limite para retirar (opcional)</label>
+                    <input type="date" name="data_limite_retirada" value="{{ v.data_limite_retirada or '' }}" style="cursor:pointer;"
+                           title="Com a data, o sistema avisa se o cliente não retirar no prazo" onclick="try { this.showPicker(); } catch (e) {}">
+                </div>
+                {% if p.pagamento == "Plano safra" %}
+                {# Plano safra: carrega agora e paga numa data combinada, normalmente longa (Rafael, 2026-10-02) #}
+                <div class="field2"><label>Data em que o cliente vai pagar *</label>
+                    <input type="date" name="vencimento_pagamento" value="{{ v.vencimento_pagamento or '' }}" required
+                           style="cursor:pointer;" onclick="try { this.showPicker(); } catch (e) {}">
+                </div>
+                {% endif %}
+            </div>
+            {% if p.pagamento == "Plano safra" %}
+            {% set parc_sem_cnpj = parceiros_cadastrados|rejectattr("cnpj")|map(attribute="nome")|list %}
+            {% if p.plano_safra_modalidade == "cessao" and p.plano_safra_parceiro in parc_sem_cnpj %}
+            <div class="erro" style="margin-bottom:10px;">O parceiro {{ p.plano_safra_parceiro }} está sem CNPJ e não pode entrar em contrato novo:
+                este pedido não será gerado até o CNPJ ser completado{% if user.role == "admin" %} em <a href="/crm/parceiros">Parceiros</a>{% else %} pelo administrador{% endif %}.</div>
+            {% endif %}
+            <p class="cv-nota">Plano safra {{ "via " ~ p.plano_safra_parceiro if p.plano_safra_modalidade == "cessao" else "direto com o cliente" }}: o cliente carrega agora e paga na data combinada{{ ", conforme o contrato assinado pelas 3 partes" if p.plano_safra_modalidade == "cessao" }}.</p>
+            {% endif %}
+            {% if p.pagamento == "Plano safra" and p.plano_safra_modalidade == "cessao" %}
+            <div class="field2"><label>Contrato de cessão assinado (cliente, {{ p.plano_safra_parceiro }} e nós) *</label>
+                <input type="file" name="contrato_cessao" accept=".pdf,.jpg,.jpeg,.png" required>
+            </div>
+            {% endif %}
+            {% if p.pagamento == "A vista" %}
+            <div class="field2"><label>Comprovante de pagamento (à vista; se o cliente ainda não pagou, anexe depois)</label>
+                <input type="file" name="comprovante_pagamento" accept=".pdf,.jpg,.jpeg,.png">
+            </div>
+            {% endif %}
+            <div class="btn-row">
+                <button type="submit">Confirmar e gerar pedido</button>
+                <button type="button" class="btn-secondary" onclick="document.getElementById('gp-{{ p.id }}').style.display = 'none';">Cancelar</button>
+            </div>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if cv.propor %}
+    <div class="cv-item">
+        <span>{{ "Cliente pode comprar de novo: faça uma nova proposta." if cv.concluidos else "Próximo passo: faça a proposta (produto, volume, preço e pagamento)." }}</span>
+        <button type="button" onclick="irPara('propostas', 'nova-proposta-form')">Fazer proposta</button>
+    </div>
+    {% endif %}
+    {% if cv.venda_antes_do_portal %}
+    <p class="cv-nota cv-nota-linha">Venda registrada antes do portal (planilha): sem acompanhamento por aqui.</p>
+    {% endif %}
+
+    {% if cv.concluidos %}
+    <details class="cv-concluidos">
+        <summary><i data-lucide="circle-check-big"></i>{{ cv.concluidos|length }} venda{{ "s" if cv.concluidos|length != 1 }} concluída{{ "s" if cv.concluidos|length != 1 }} neste ciclo</summary>
+        <ul>
+            {% for c in cv.concluidos %}
+            <li>{{ c.obj.produto }} · pedido {{ c.obj.codigo }} · {{ c.sub }}{% if c.quando %} · finalizado em {{ c.quando.strftime("%d/%m") }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+</section>

@@ -3,39 +3,308 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Portal{% endblock %} · Calcario Integral</title>
+    <title>{% block title %}Portal{% endblock %} · Integral</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_version() }}">
+    {# Icones Lucide com versao fixa: atualizar a biblioteca e decisao, nao surpresa #}
+    <script src="https://unpkg.com/lucide@1.48.0/dist/umd/lucide.min.js"></script>
 </head>
-<body>
+{# Balcao de vendas so consulta Logistica, Financeiro, Regras e Log (2026-10-05): formularios de acao desligados #}
+{% set so_consulta = user and user.role == "balcao" and request.url.path.startswith(("/logistica", "/financeiro", "/admin/regras", "/crm/log", "/crm/parceiros")) %}
+<body class="{{ 'com-menu' if user }}{{ ' so-consulta' if so_consulta }}">
     {% if user %}
-    <header class="topbar">
-        <div class="brand">Portal Calcario Integral</div>
-        <nav>
-            {% if user.role in ("admin", "logistica") %}
-            <a href="/logistica">Logistica</a>
-            {% endif %}
-            {% if user.role in ("admin", "vendedor") %}
-            <a href="/vendedor">Pedidos</a>
-            {% endif %}
-            {% if user.role in ("admin", "logistica") %}
-            <a href="/crm">CRM</a>
-            {% elif user.role == "vendedor" %}
-            <a href="/vendedor/crm">CRM</a>
-            {% endif %}
-            {% if user.role == "admin" %}
-            <a href="/admin/usuarios">Usuarios</a>
-            {% endif %}
-        </nav>
-        <div class="user-info">
-            {{ user.nome_completo }} <span class="pill role-{{ user.role }}">{{ user.role }}</span>
-            <button class="logout-btn" onclick="window.location='/logout'">Sair</button>
+    {% set menu = menu_lateral(request, user) %}
+    {% set pode_cadastrar = user.role in ("admin", "vendedor", "balcao") %}
+    {# Financeiro so confere pagamentos: nao busca nem abre ficha de cliente #}
+    {% set pode_buscar = user.role not in ("financeiro", "portaria") %}
+    <aside class="sidebar" id="menu-lateral">
+        {% macro nav_item(item, sub=False) -%}
+        <a class="nav-item{{ ' nav-sub-item' if sub }}{{ ' ativo' if item.ativo }}" href="{{ item.href }}" title="{{ item.rotulo }}"{% if item.ativo %} aria-current="page"{% endif %}>
+            <i data-lucide="{{ item.icone }}"></i><span class="nav-rotulo">{{ item.rotulo }}</span>
+            {% if item.contador %}<span class="nav-contador{{ ' neutro' if item.contador_neutro }}">{{ item.contador }}</span>{% endif %}
+        </a>
+        {%- endmacro %}
+        {% macro nav_entrada(e) -%}
+        {% if e.tipo == "setor" %}
+        {# Setor (Rafael, 2026-10-04): abre e fecha; o da pagina atual ja vem aberto #}
+        <div class="nav-setor{{ ' aberto' if e.aberto }}" data-setor="{{ e.chave }}">
+            <button type="button" class="nav-item nav-setor-cab" aria-expanded="{{ 'true' if e.aberto else 'false' }}" title="{{ e.rotulo }}">
+                <i data-lucide="{{ e.icone }}"></i><span class="nav-rotulo">{{ e.rotulo }}</span>
+                {% if e.contador %}<span class="nav-contador nav-contador-setor{{ ' neutro' if e.contador_neutro }}">{{ e.contador }}</span>{% endif %}
+                <i data-lucide="chevron-down" class="nav-seta"></i>
+            </button>
+            <div class="nav-sub">{% for item in e.itens %}{{ nav_item(item, True) }}{% endfor %}</div>
         </div>
+        {% else %}{{ nav_item(e) }}{% endif %}
+        {%- endmacro %}
+        {# Logo oficial (arquivo enviado pelo Rafael em 02/10/2026, so as margens brancas recortadas) -- nao redesenhar #}
+        <div class="sidebar-cab">
+            <a class="marca" href="/"><img class="marca-logo" src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso"></a>
+            <button type="button" class="btn-icone btn-icone-limpo sidebar-recolher" onclick="alternarMenuRecolhido()"
+                    title="Recolher o menu (só ícones)" aria-label="Recolher o menu"><i data-lucide="panel-left-close"></i></button>
+        </div>
+        <nav class="sidebar-nav">
+            {% for e in menu.topo %}{{ nav_entrada(e) }}{% endfor %}
+            {% if menu.rodape %}<div class="nav-separador"></div>{% for e in menu.rodape %}{{ nav_entrada(e) }}{% endfor %}{% endif %}
+        </nav>
+        <div class="sidebar-rodape">
+            <div class="avatar" title="{{ user.nome_completo }} · {{ menu.papel }}">{{ iniciais(user.nome_completo) }}</div>
+            <div class="usuario">
+                <div class="usuario-nome">{{ user.nome_completo }}</div>
+                <div class="usuario-papel">{{ menu.papel }}</div>
+            </div>
+            <a class="btn-icone btn-icone-limpo" href="/trocar-senha" title="Minha senha"><i data-lucide="key-round"></i></a>
+            <a class="btn-icone btn-icone-limpo" href="/logout" title="Sair"><i data-lucide="log-out"></i></a>
+        </div>
+    </aside>
+    <script>
+    // Menu recolhido (so icones) e setores abertos: preferencia de cada pessoa, neste navegador
+    (function () {
+        try { if (localStorage.getItem("menu-recolhido") === "1") document.body.classList.add("menu-recolhido"); } catch (e) {}
+        var salvos = {};
+        try { salvos = JSON.parse(localStorage.getItem("menu-setores") || "{}"); } catch (e) {}
+        document.querySelectorAll(".nav-setor").forEach(function (setor) {
+            var chave = setor.dataset.setor, cab = setor.querySelector(".nav-setor-cab");
+            // o setor da pagina atual sempre abre; os outros, como a pessoa deixou
+            if (!setor.classList.contains("aberto") && salvos[chave]) setor.classList.add("aberto");
+            cab.setAttribute("aria-expanded", setor.classList.contains("aberto") ? "true" : "false");
+            cab.addEventListener("click", function () {
+                if (document.body.classList.contains("menu-recolhido")) {  // recolhido: abre o menu e o setor
+                    alternarMenuRecolhido(false);
+                    setor.classList.add("aberto");
+                } else {
+                    setor.classList.toggle("aberto");
+                }
+                var aberto = setor.classList.contains("aberto");
+                cab.setAttribute("aria-expanded", aberto ? "true" : "false");
+                salvos[chave] = aberto;
+                try { localStorage.setItem("menu-setores", JSON.stringify(salvos)); } catch (e) {}
+            });
+        });
+    })();
+    function alternarMenuRecolhido(recolher) {
+        var r = typeof recolher === "boolean" ? recolher : !document.body.classList.contains("menu-recolhido");
+        document.body.classList.toggle("menu-recolhido", r);
+        try { localStorage.setItem("menu-recolhido", r ? "1" : "0"); } catch (e) {}
+        var b = document.querySelector(".sidebar-recolher");
+        if (b) { b.title = r ? "Abrir o menu" : "Recolher o menu (só ícones)"; b.setAttribute("aria-label", b.title); }
+        window.dispatchEvent(new Event("resize"));  // mapas e graficos se ajustam a largura nova
+    }
+    </script>
+    <div class="menu-fundo" onclick="document.body.classList.remove('menu-aberto')"></div>
+
+    <header class="topo-celular">
+        <a class="marca-celular" href="/"><img class="marca-logo" src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso"></a>
+        {% if pode_buscar %}<button type="button" class="btn-icone" title="Buscar cliente" onclick="abrirBuscaCelular()"><i data-lucide="search"></i></button>{% endif %}
+        {% if pode_cadastrar %}
+        <a class="btn-icone" href="/vendedor/crm/avisos" title="Avisos"><i data-lucide="bell"></i>{% if menu.contadores.avisos %}<span class="ponto"></span>{% endif %}</a>
+        {% endif %}
+        <div class="avatar">{{ iniciais(user.nome_completo) }}</div>
     </header>
     {% endif %}
-    <main>
+
+    <main class="principal">
+        {% if user %}
+        {# Em vez do caminho inteiro (Inicio > Carteira > ...), so "Voltar para" o
+           ultimo nivel com link -- de onde a pessoa veio (Rafael, 2026-10-02) #}
+        {% set nav = namespace(voltar=None) %}
+        {% if migalhas is defined and migalhas %}{% for label, url in migalhas %}{% if url %}{% set nav.voltar = (label, url) %}{% endif %}{% endfor %}{% endif %}
+        <div class="topo">
+            <div class="migalha">
+                {% if nav.voltar %}<a class="voltar" href="{{ nav.voltar[1] }}"><i data-lucide="arrow-left"></i>Voltar para {{ nav.voltar[0] }}</a>
+                {% else %}{% block topo_titulo %}{% endblock %}{% endif %}
+            </div>
+            {% if pode_buscar %}
+            <label class="busca" id="busca-topo">
+                <i data-lucide="search"></i>
+                <input type="text" class="busca-cliente" placeholder="Buscar cliente" autocomplete="off">
+                <div class="autocomplete-lista"></div>
+            </label>
+            {% endif %}
+            {% if pode_cadastrar %}
+            <a class="btn-icone" href="/vendedor/crm/avisos" title="Avisos"><i data-lucide="bell"></i>{% if menu.contadores.avisos %}<span class="ponto"></span>{% endif %}</a>
+            <a class="btn btn-primario" href="/crm/cliente/novo"><i data-lucide="plus"></i>Cadastrar cliente</a>
+            {% endif %}
+        </div>
+        {% if pode_buscar %}
+        <label class="busca busca-celular">
+            <i data-lucide="search"></i>
+            <input type="text" class="busca-cliente" placeholder="Buscar cliente" autocomplete="off">
+            <div class="autocomplete-lista"></div>
+        </label>
+        {% endif %}
+        {% if nav.voltar %}<a class="voltar voltar-celular" href="{{ nav.voltar[1] }}"><i data-lucide="arrow-left"></i>Voltar para {{ nav.voltar[0] }}</a>{% endif %}
+        {# Pagamento a vista esperando conferencia = PRIORIDADE MAXIMA (Rafael, 2026-10-04): faixa vermelha em todas as
+           paginas de admin e financeiro (some sozinha quando conferido). No Inicio e em Pagamentos ja e o destaque. #}
+        {% if menu.urgente and request.url.path not in ("/financeiro/pagamentos", "/admin/inicio", "/financeiro/inicio") %}
+        <a class="faixa-urgente" href="{{ menu.urgente.link }}">
+            <i data-lucide="siren"></i>
+            <span><b>{{ menu.urgente.n }} pagamento{{ "s" if menu.urgente.n != 1 }} à vista esperando conferência</b> {{ menu.urgente.ha }}
+                · o caminhão só carrega depois</span>
+            <span class="faixa-urgente-btn">Conferir agora<i data-lucide="arrow-right"></i></span>
+        </a>
+        {% endif %}
+        {% endif %}
+        {% if so_consulta %}
+        <p class="faixa-consulta"><i data-lucide="eye"></i>Você está consultando esta área. Quem altera aqui é a equipe do setor.</p>
+        {% endif %}
         {% block content %}{% endblock %}
+        {% if so_consulta %}
+        <script>
+        // Balcao de vendas: so consulta nesta area -- desliga os formularios de acao (o servidor tambem recusa)
+        document.querySelectorAll("main form").forEach(function (f) {
+            if ((f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+            f.classList.add("form-consulta");
+            f.querySelectorAll("input, select, textarea, button").forEach(function (el) { el.disabled = true; });
+        });
+        </script>
+        {% endif %}
     </main>
+
+    {# Confirmacao da ultima acao (app/feedback.py), mostrada uma vez #}
+    {% set aviso_tela = request.session.pop("aviso_tela", None) if user else None %}
+    {% if aviso_tela %}
+    <div class="toast {{ 'toast-erro' if aviso_tela.erro }}" role="status" id="toast">
+        <i data-lucide="{{ 'circle-alert' if aviso_tela.erro else 'circle-check' }}" class="toast-icone"></i>
+        <span class="toast-texto">{{ aviso_tela.texto }}</span>
+        {% if aviso_tela.link %}<a class="toast-link" href="{{ aviso_tela.link }}">{{ aviso_tela.rotulo }}<i data-lucide="arrow-right"></i></a>{% endif %}
+        <button type="button" class="toast-fechar" aria-label="Fechar" onclick="this.parentElement.remove()"><i data-lucide="x"></i></button>
+    </div>
+    {% endif %}
+
+    {% if user %}
+    <script>
+    // Presenca (bolinha verde na equipe, presenca.py): "estou aqui" a cada 2 min enquanto a aba esta visivel
+    (function () {
+        function sinal() { if (document.visibilityState === "visible") fetch("/api/presenca", {method: "POST"}).catch(function () {}); }
+        setInterval(sinal, 120000);
+        document.addEventListener("visibilitychange", sinal);
+    })();
+    </script>
+    {% include "_rota.html" %}
+    {% if pode_cadastrar %}<a class="fab" href="/crm/cliente/novo" title="Cadastrar cliente"><i data-lucide="plus"></i></a>{% endif %}
+    <nav class="barra-inferior">
+        {% for item in menu.principais %}
+        <a class="{{ 'ativo' if item.ativo }}" href="{{ item.href }}">
+            <i data-lucide="{{ item.icone }}"></i>{{ item.curto or (item.rotulo.split(' ')[0] if item.rotulo|length > 12 else item.rotulo) }}
+            {% if item.contador %}<span class="nav-contador">{{ item.contador }}</span>{% endif %}
+        </a>
+        {% endfor %}
+        <a href="#" onclick="document.body.classList.add('menu-aberto'); return false;"><i data-lucide="menu"></i>Mais</a>
+    </nav>
+    <script>
+    function abrirBuscaCelular() {
+        document.body.classList.toggle("busca-aberta");
+        var campo = document.querySelector(".busca-celular input");
+        if (document.body.classList.contains("busca-aberta")) campo.focus();
+    }
+    // Busca de cliente (mesma API da busca que ficava no topo do CRM)
+    document.querySelectorAll(".busca-cliente").forEach(function (input) {
+        var lista = input.parentElement.querySelector(".autocomplete-lista");
+        var temporizador = null;
+        function esconder() { lista.innerHTML = ""; lista.classList.remove("show"); }
+        input.addEventListener("input", function () {
+            var termo = input.value.trim();
+            clearTimeout(temporizador);
+            if (termo.length < 2) { esconder(); return; }
+            temporizador = setTimeout(function () {
+                fetch("/api/busca-crm-clientes?q=" + encodeURIComponent(termo))
+                    .then(function (r) { return r.json(); })
+                    .then(function (itens) {
+                        if (!itens.length) { esconder(); return; }
+                        lista.innerHTML = "";
+                        itens.forEach(function (item) {
+                            var div = document.createElement("div");
+                            div.className = "autocomplete-item";
+                            div.dataset.id = item.id;
+                            div.textContent = item.label;
+                            lista.appendChild(div);
+                        });
+                        lista.classList.add("show");
+                    });
+            }, 250);
+        });
+        lista.addEventListener("click", function (ev) {
+            var item = ev.target.closest(".autocomplete-item");
+            if (item) window.location = "/crm/cliente/" + item.dataset.id;
+        });
+        document.addEventListener("click", function (ev) {
+            if (ev.target !== input) esconder();
+        });
+    });
+    </script>
+    {% endif %}
+    <script>
+    if (window.lucide) lucide.createIcons();
+    // Campo de data: clicar em qualquer lugar do campo abre o calendario, nao so
+    // no iconezinho (Rafael, 2026-10-03). Um padrao so pro portal inteiro, inclusive
+    // campos que aparecem depois (ficha do pedido, fila). Navegador sem showPicker
+    // continua como era (digitar ou clicar no icone).
+    document.addEventListener("click", function (ev) {
+        var campo = ev.target;
+        if (!campo.matches || !campo.matches('input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"]')) return;
+        if (campo.disabled || campo.readOnly || typeof campo.showPicker !== "function") return;
+        try { campo.showPicker(); } catch (e) { /* calendario ja aberto: segue o padrao do navegador */ }
+    });
+    // Leva o usuario ate o que ele acabou de abrir: rola ate o bloco, poe o
+    // cursor no primeiro campo e da um destaque rapido (regra de fluxo do Rafael).
+    function levarAte(el, opcoes) {
+        if (!el) return;
+        opcoes = opcoes || {};
+        el.scrollIntoView({behavior: "smooth", block: opcoes.bloco || "start"});
+        if (opcoes.focar !== false) {
+            var campo = el.querySelector("input:not([type=hidden]):not([type=radio]):not([type=checkbox]), select, textarea");
+            if (campo && campo.offsetParent !== null) setTimeout(function () { campo.focus({preventScroll: true}); }, 400);
+        }
+        if (opcoes.destacar !== false) {
+            el.classList.remove("destaque-abriu");
+            void el.offsetWidth;
+            el.classList.add("destaque-abriu");
+        }
+        // Abriu um formulario guiado: ja aponta o primeiro passo
+        var guiado = (el.matches && el.matches("form[data-guiado]")) ? el : (el.querySelector ? el.querySelector("form[data-guiado]") : null);
+        if (guiado && opcoes.focar !== false) setTimeout(function () { guiarProximo(guiado, null); }, 420);
+    }
+    // Formulario guiado (data-guiado, Rafael 2026-10-02): depois de preencher um
+    // campo, aponta o proximo obrigatorio ainda vazio; com tudo preenchido,
+    // aponta o botao de confirmar. Campo opcional fica livre, sem forcar.
+    function guiarProximo(form, atual) {
+        if (atual && atual.type !== "radio" && atual.type !== "checkbox" && !atual.value) return;
+        var campos = Array.prototype.filter.call(form.elements, function (el) {
+            return el.required && !el.disabled && el.type !== "hidden" && el.offsetParent !== null;
+        });
+        var proximo = campos.find(function (el) {
+            if (el.type === "radio") return !form.querySelector('input[name="' + el.name + '"]:checked');
+            if (el.type === "checkbox") return !el.checked;
+            return !el.value;
+        });
+        form.querySelectorAll(".campo-proximo").forEach(function (el) { el.classList.remove("campo-proximo"); });
+        var alvo = proximo ? (proximo.closest(".field2, .rc-chips, .gp-duplicado") || proximo) : form.querySelector('button[type="submit"]');
+        if (!alvo || alvo.offsetParent === null) return;
+        alvo.classList.add("campo-proximo");
+        (proximo || alvo).focus({preventScroll: true});
+        alvo.scrollIntoView({behavior: "smooth", block: "nearest"});
+    }
+    document.addEventListener("change", function (ev) {
+        var form = ev.target.form;
+        if (form && form.hasAttribute("data-guiado")) setTimeout(function () { guiarProximo(form, ev.target); }, 0);
+    });
+    // Depois de salvar: rola ate o item salvo (#ancora do redirect) e destaca.
+    (function () {
+        if (location.hash.length > 1) {
+            var alvo = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+            if (alvo) {
+                var det = alvo.closest("details");
+                if (det) det.open = true;
+                alvo.scrollIntoView({block: "center"});
+                alvo.classList.add("destaque-salvo");
+            }
+        }
+        var toast = document.getElementById("toast");
+        if (toast) setTimeout(function () { toast.classList.add("toast-saindo"); setTimeout(function () { toast.remove(); }, 400); },
+                              toast.querySelector(".toast-link") ? 15000 : 7000);
+    })();
+    </script>
 </body>
 </html>

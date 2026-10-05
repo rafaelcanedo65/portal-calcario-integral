@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Parceiros de Plano Safra{% endblock %}
+{% block content %}
+<div class="pagina-cab">
+    <div>
+        <h1>Parceiros de cessão de crédito</h1>
+        <p class="pagina-sub">Empresas que podem receber a cessão de crédito quando um cliente compra em "Plano safra"</p>
+    </div>
+</div>
+<p class="aviso-dados-exemplo">
+    <i data-lucide="info"></i> Por exemplo: tradings e fomentadoras de agricultores. Só os parceiros cadastrados aqui podem ser
+    escolhidos numa proposta. Desativar um parceiro não apaga o histórico, só impede que ele seja escolhido em propostas novas.
+</p>
+{% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+
+<div class="table-wrap">
+<table class="tabela">
+    <thead><tr><th>Nome</th><th>CNPJ</th><th>Situação</th><th></th></tr></thead>
+    <tbody>
+        {% for p in parceiros %}
+        <tr>
+            <td>{{ p.nome }}</td>
+            <td>
+                {% if p.cnpj %}{{ p.cnpj }}
+                {% else %}
+                {# CNPJ virou obrigatorio em 2026-10-02: completar os cadastrados antes #}
+                <form method="post" action="/crm/parceiros/{{ p.id }}/cnpj" class="cnpj-pendente">
+                    <span class="log-badge gold">CNPJ pendente</span>
+                    <input type="text" name="cnpj" placeholder="00.000.000/0000-00" required>
+                    <button type="submit" class="back-btn" style="margin:0;">Salvar</button>
+                </form>
+                {% endif %}
+            </td>
+            <td><span class="log-badge {{ 'green' if p.ativo else 'grey' }}">{{ "Ativo" if p.ativo else "Inativo" }}</span></td>
+            <td>
+                <form method="post" action="/crm/parceiros/{{ p.id }}/alternar-ativo" style="margin:0;">
+                    <button type="submit" class="back-btn" style="margin:0;">{{ "Desativar" if p.ativo else "Reativar" }}</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Nenhum parceiro cadastrado ainda.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<h2 class="secao-titulo">Cadastrar novo parceiro</h2>
+<form method="post" action="/crm/parceiros" class="form-inline">
+    <label>Nome<input type="text" name="nome" required></label>
+    <label>CNPJ *<input type="text" name="cnpj" placeholder="00.000.000/0000-00" required></label>
+    <button type="submit">Cadastrar parceiro</button>
+</form>
+{% endblock %}

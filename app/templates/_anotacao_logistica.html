@@ -1,0 +1,171 @@
+{# Ficha do pedido na Logistica (Rafael, 2026-10-03): mesmo conceito da ficha do
+   cliente no CRM -- onde o pedido esta (etapas), o que fazer agora (proximo
+   passo, com o botao certo), contato, conversa com o vendedor, anotacao e
+   historico. Abre embaixo da linha do pedido, na lista e na fila. #}
+<div class="anotacao ficha-pedido" id="anotacao-{{ p.id }}">
+    <div class="anotacao-cab">
+        <div>
+            <strong>{{ p.cliente }}</strong>
+            <span class="anotacao-sub">Pedido {{ p.numero_pedido }}{% if pcrm %} (no portal {{ pcrm.codigo_portal }}){% endif %} ·
+                {{ p.produto or "produto não informado" }} ·
+                {{ p.uf or "UF não informada" }} · vendedor {{ p.vendedor or "não informado" }}</span>
+            <span class="ficha-contato ficha-local">
+                <i data-lucide="map-pin"></i>
+                {% if p.latitude is not none %}
+                <b>{{ p.cidade ~ "/" if p.cidade }}{{ p.uf }}</b> · {{ local_rotulo }}
+                · <button type="button" class="btn-link-discreto" onclick="abrirRota('pedido={{ p.id }}')">Rota das plantas</button>
+                {%- if p.cidade %} · <a href="/logistica/regiao?uf_destino={{ p.uf }}&amp;cidade_destino={{ p.cidade|urlencode }}&amp;raio=100#proximos">pedidos perto</a>{% endif %}
+                {% else %}
+                <b>Local de entrega não informado</b>
+                {% endif %}
+                · <button type="button" class="btn-link-discreto" onclick="var f = document.getElementById('local-{{ p.id }}'); f.hidden = !f.hidden;">{{ "Corrigir local" if p.latitude is not none else "Informar local" }}</button>
+            </span>
+            <span class="ficha-contato">
+                <i data-lucide="phone"></i>
+                {% if p.telefone %}<a href="tel:{{ p.telefone|telefone_link }}">{{ p.telefone }}</a>{% else %}Sem telefone no NetSuite{% endif %}
+                {%- if cliente_crm and cliente_crm.telefone and cliente_crm.telefone != p.telefone %} · no CRM: {{ cliente_crm.telefone }}{% endif %}
+                · <a href="/clientes/pedidos?nome={{ p.cliente|urlencode }}">Todos os pedidos do cliente</a>
+                {%- if cliente_crm and user.role == "admin" %} · <a href="/crm/cliente/{{ cliente_crm.id }}">Ficha no CRM</a>{% endif %}
+            </span>
+        </div>
+        <button type="button" class="btn-icone btn-icone-limpo" onclick="fecharAnotacao({{ p.id }})" aria-label="Fechar"><i data-lucide="x"></i></button>
+    </div>
+
+    {% if p.local_fonte == "transportadora sem destino" %}
+    <div class="ficha-aviso-transp">
+        <i data-lucide="truck"></i>
+        <div><b>Venda para transportadora: informe o destino final.</b> O produto não vai para a transportadora; o local de entrega é o
+            do cliente que vai usar. Peça ao vendedor (no pedido do portal) ou informe aqui a cidade de entrega.</div>
+    </div>
+    {% endif %}
+    <form method="post" action="/logistica/pedido/{{ p.id }}/local" class="ficha-local-form" id="local-{{ p.id }}"
+          {{ "hidden" if p.local_fonte != "transportadora sem destino" }}>
+        <input type="hidden" name="voltar" value="{{ voltar }}">
+        <label class="anotacao-campo">Estado
+            <select name="uf" class="local-uf" data-alvo="local-cidades-{{ p.id }}">
+                {% for u in ufs_local %}<option value="{{ u }}" {{ "selected" if u == p.uf }}>{{ u }}</option>{% endfor %}
+            </select></label>
+        <label class="anotacao-campo">Cidade de entrega
+            <input type="text" name="cidade" list="local-cidades-{{ p.id }}" value="{{ p.cidade or '' }}" required autocomplete="off" placeholder="Comece a digitar">
+            <datalist id="local-cidades-{{ p.id }}"></datalist></label>
+        <label class="anotacao-campo">Coordenadas (opcional)
+            <input type="text" name="coordenadas" placeholder="-3.0021, -47.3527 ou link do Google Maps"></label>
+        <button type="submit" class="btn btn-primario">Salvar local</button>
+    </form>
+
+    <ol class="cv-trilho ficha-trilho" style="grid-template-columns: repeat({{ etapas|length }}, minmax(0, 1fr));">
+        {% for e in etapas %}
+        <li class="cv-passo cv-{{ e.estado }}">
+            {# Bolinha com a porcentagem: so a do carregamento em andamento #}
+            {% if e.chave == "carga" and e.estado == "atual" and e.pct is not none %}
+            <span class="cv-ponto cv-ponto-pct" style="--pct: {{ e.pct }};"><b>{{ e.pct }}%</b></span>
+            {% else %}
+            <span class="cv-ponto">{% if e.estado == "feito" %}<i data-lucide="check"></i>{% elif e.estado == "encerrado" %}<i data-lucide="x"></i>{% endif %}</span>
+            {% endif %}
+            <span class="cv-nome">{{ e.rotulo }}</span>
+            <span class="ficha-quando">{{ e.quando.strftime("%d/%m") if e.quando else "" }}</span>
+        </li>
+        {% endfor %}
+    </ol>
+
+    <div class="ficha-passo ficha-passo-{{ passo.cor }}">
+        <div class="ficha-passo-titulo"><i data-lucide="zap"></i>{{ passo.titulo }}</div>
+        <p class="ficha-passo-texto">{{ passo.texto }}</p>
+        {% if passo.acoes %}
+        <div class="ficha-passo-acoes">
+            {% if "data" in passo.acoes %}
+            <form method="post" action="/logistica/pedido/{{ p.id }}/anotacao" class="ficha-acao">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <input type="date" name="data_limite" required min="{{ hoje.isoformat() }}" aria-label="Data limite de retirada">
+                <button type="submit" class="btn btn-primario">{{ "Salvar nova data" if p.data_limite_retirada else "Salvar prazo" }}</button>
+            </form>
+            {% endif %}
+            {% if "cobrar" in passo.acoes and p.vendedor %}
+            <form method="post" action="/logistica/pedido/{{ p.id }}/anotacao" class="ficha-acao">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <input type="hidden" name="situacao" value="cobrar_vendedor">
+                <input type="text" name="mensagem" placeholder="O que perguntar a {{ p.vendedor }}" aria-label="Mensagem para o vendedor">
+                <button type="submit" class="btn btn-secundario-claro"><i data-lucide="send"></i>Cobrar {{ p.vendedor.split(' ')[0]|capitalize }}</button>
+            </form>
+            {% endif %}
+            {% if "encerrar" in passo.acoes %}
+            <form method="post" action="/logistica/pedido/{{ p.id }}/anotacao" class="ficha-acao">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <select name="situacao" aria-label="Como encerrar">
+                    {% for chave in encerram %}<option value="{{ chave }}">{{ situacoes[chave] }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn btn-secundario-claro">Encerrar</button>
+            </form>
+            {% endif %}
+            {% if "reabrir" in passo.acoes %}
+            <form method="post" action="/logistica/pedido/{{ p.id }}/anotacao" class="ficha-acao">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <input type="hidden" name="campos" value="situacao">
+                <input type="hidden" name="situacao" value="">
+                <button type="submit" class="btn btn-secundario-claro"><i data-lucide="rotate-ccw"></i>Reabrir pedido</button>
+            </form>
+            {% endif %}
+            {% if "conversa" in passo.acoes %}
+            <button type="button" class="btn btn-secundario-claro" onclick="levarAte(document.getElementById('conversa-{{ p.id }}'))"><i data-lucide="message-circle"></i>Ver conversa</button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="ficha-colunas">
+        <section class="ficha-bloco" id="conversa-{{ p.id }}">
+            <div class="anotacao-historico-titulo">Conversa com {{ p.vendedor or "o vendedor" }}</div>
+            {% for m in mensagens %}
+            <div class="ficha-msg ficha-msg-{{ 'vendedor' if m.autor_role == 'vendedor' else 'equipe' }}">
+                <span class="ficha-msg-quem">{{ m.autor_nome }} · {{ m.criado_em.strftime("%d/%m %H:%M") }}</span>{{ m.texto }}
+            </div>
+            {% else %}
+            <p class="nota" style="margin:0 0 8px;">Nenhuma mensagem ainda.</p>
+            {% endfor %}
+            <form method="post" action="/pedidos/{{ p.id }}/conversa" class="ficha-responder">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <input type="text" name="texto" required placeholder="Escrever para {{ p.vendedor or 'o vendedor' }}" aria-label="Mensagem">
+                <button type="submit" class="btn btn-secundario-claro">Enviar</button>
+            </form>
+            <a class="ficha-link" href="/pedidos/{{ p.id }}/conversa">Conversa completa</a>
+        </section>
+
+        <section class="ficha-bloco">
+            <div class="anotacao-historico-titulo">Anotação da equipe</div>
+            <form method="post" action="/logistica/pedido/{{ p.id }}/anotacao" class="anotacao-form">
+                <input type="hidden" name="voltar" value="{{ voltar }}">
+                <input type="hidden" name="campos" value="situacao,data_limite,comentario">
+                <label class="anotacao-campo">Situação
+                    <select name="situacao">
+                        <option value="">Sem situação</option>
+                        {% for chave, rotulo in situacoes.items() %}<option value="{{ chave }}" {{ "selected" if p.situacao_logistica == chave }}>{{ rotulo }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="anotacao-campo">Data limite de retirada
+                    <input type="date" name="data_limite" value="{{ p.data_limite_retirada.isoformat() if p.data_limite_retirada }}">
+                </label>
+                <label class="anotacao-campo anotacao-comentario">Comentário
+                    <textarea name="comentario" rows="2" placeholder="O que foi combinado com o cliente ou com o vendedor">{{ p.comentario_logistica or "" }}</textarea>
+                </label>
+                <p class="nota anotacao-dica">"Cobrar retorno do vendedor" avisa {{ p.vendedor or "o vendedor" }} na hora.
+                    Desistência, Finalizado e Cliente com crédito tiram o pedido da lista em aberto.</p>
+                <div class="anotacao-acoes"><button type="submit" class="btn btn-primario">Salvar anotação</button></div>
+            </form>
+        </section>
+    </div>
+
+    <div class="anotacao-historico">
+        <div class="anotacao-historico-titulo">Histórico</div>
+        {% for a in p.anotacoes %}
+        <div class="anotacao-item">
+            <span class="anotacao-quando">{{ a.quando.strftime("%d/%m/%Y %H:%M") }}</span>
+            <span class="anotacao-quem">{{ a.quem or "sem nome" }}{% if a.origem == "planilha" %}
+                <span class="anotacao-origem" title="Veio da planilha: lá só ficou o valor anotado, sem o antes e o depois">planilha</span>{% endif %}</span>
+            <span class="anotacao-texto"><strong>{{ campos[a.campo] }}:</strong>
+                {% if a.registro is not none %}{{ a.registro }}{% else %}{{ a.antes or "—" }} → {{ a.depois or "—" }}{% endif %}</span>
+        </div>
+        {% else %}
+        <p class="nota" style="margin:0;">Nada anotado ainda.</p>
+        {% endfor %}
+    </div>
+</div>

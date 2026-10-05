@@ -1,11 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Carteira de Clientes{% endblock %}
+{% block title %}Pedidos{% endblock %}
 {% block content %}
-<h1>{% if user.role == "vendedor" %}Minha carteira de clientes{% else %}Todos os clientes (visao admin){% endif %}</h1>
+<div class="pagina-cab">
+    <div>
+        <h1>Pedidos</h1>
+        <p class="pagina-sub">{{ pedidos|length }} pedido{{ "s" if pedidos|length != 1 }} em aberto · {{ total_pedidos }} no ano, de {{ clientes|length }} cliente{{ "s" if clientes|length != 1 }}{% if user.role != "vendedor" %} · todos os vendedores{% endif %}</p>
+    </div>
+</div>
 
+<h2 class="secao-titulo" style="margin-top:0;">Por cliente</h2>
+
+<div class="table-wrap">
 <table class="tabela">
     <thead>
-        <tr><th>Cliente</th><th>Pedidos</th><th>Saldo em aberto (t)</th><th>Faturado (t)</th></tr>
+        <tr><th>Cliente</th><th>Pedidos no ano</th><th>Saldo em aberto (t)</th><th>Carregado no ano (t)</th></tr>
     </thead>
     <tbody>
         {% for cliente, info in clientes.items() %}
@@ -20,11 +28,13 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 
-<h2>Pedidos</h2>
+<h2 class="secao-titulo">Pedidos em aberto</h2>
+<div class="table-wrap">
 <table class="tabela">
     <thead>
-        <tr><th>Pedido</th><th>Cliente</th><th>Data</th><th>Status</th><th>Saldo (t)</th><th>Valor Unit.</th><th>Prazo Retirada</th><th>Contato</th></tr>
+        <tr><th>Pedido</th><th>Cliente</th><th>Data</th><th>Carregado (t)</th><th>Saldo (t)</th><th>Valor Unit.</th><th>Prazo Retirada</th><th>Contato</th></tr>
     </thead>
     <tbody>
         {% for p in pedidos %}
@@ -32,7 +42,7 @@
             <td>{{ p.numero_pedido }}</td>
             <td>{{ p.cliente }}</td>
             <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}</td>
-            <td>{{ p.status }}</td>
+            <td>{{ p.faturado|numbr }} de {{ p.quant_total|numbr }}{% if p.ultima_retirada %}<br><span class="nota" style="margin:0;">últ. retirada {{ p.ultima_retirada.strftime("%d/%m") }}</span>{% endif %}</td>
             <td>{{ p.saldo|numbr }}</td>
             <td>{{ p.valor_unitario|numbr }}</td>
             <td>{{ p.data_limite_retirada.strftime("%d/%m/%Y") if p.data_limite_retirada else "-" }}</td>
@@ -46,4 +56,5 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% endblock %}

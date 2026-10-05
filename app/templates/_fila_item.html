@@ -1,0 +1,11 @@
+{% macro fila_item(item) %}
+<a href="{{ item.link }}" class="fila-item">
+    <span class="avatar">{{ iniciais_cliente(item.cliente.fazenda) }}</span>
+    <span class="fila-item-cliente">
+        <span class="fila-item-nome">{{ item.cliente.fazenda }}</span>
+        <span class="fila-item-sub">{{ item.sub }}</span>
+    </span>
+    <span class="log-badge {{ item.cor }}">{{ item.etiqueta }}</span>
+    <i data-lucide="chevron-right" class="fila-item-seta"></i>
+</a>
+{% endmacro %}

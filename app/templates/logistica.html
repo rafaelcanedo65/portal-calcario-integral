@@ -1,29 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Logistica{% endblock %}
+{% block title %}Logística{% endblock %}
 {% block content %}
-<h1>Pedidos em aberto — ordenados por Ton/Dia Necessario (maior primeiro)</h1>
-<div class="summary-cards">
-    <div class="card"><span class="card-value">{{ pedidos|length }}</span><span class="card-label">Pedidos nesta visao</span></div>
-    <div class="card card-danger"><span class="card-value">{{ vencidos }}</span><span class="card-label">Prazos vencidos</span></div>
-    <div class="card"><span class="card-value">{{ total_saldo|numbr(0) }}</span><span class="card-label">Toneladas em aberto</span></div>
-    <div class="card"><span class="card-value" style="font-size:1.1rem; color:var(--ink-soft);">Aguardando NetSuite</span><span class="card-label">Tempo medio de carregamento</span></div>
+<div class="pagina-cab">
+    <div>
+        <h1>Logística</h1>
+        <p class="pagina-sub">{% if encerrados %}Encerrados pela equipe (Finalizado, Desistência, Cliente com crédito) que ainda têm saldo no NetSuite
+            {% else %}Pedidos em aberto, do maior Ton/dia necessário para o menor{% endif %}</p>
+        {% if importacao %}
+        <p class="fonte-dados"><i data-lucide="sheet"></i>Planilha {{ importacao.fonte }} de
+            {{ importacao.atualizada_em.strftime("%d/%m/%Y às %H:%M") if importacao.atualizada_em else "data não informada" }}</p>
+        {% endif %}
+    </div>
 </div>
+{# Numeros como informacao de apoio, sem quadro (mesmo padrao do Inicio e da ficha) #}
+<section class="numeros numeros-topo" aria-label="Números desta visão">
+    <div class="numeros-itens">
+        <div class="numeros-item">
+            <span class="numeros-rotulo">Pedidos nesta visão</span>
+            <span class="numeros-valor">{{ pedidos|length }}</span>
+        </div>
+        <div class="numeros-item">
+            <span class="numeros-rotulo">Prazos vencidos</span>
+            <span class="numeros-valor {{ 'alerta' if vencidos }}">{{ vencidos }}</span>
+        </div>
+        <div class="numeros-item">
+            <span class="numeros-rotulo">Toneladas em aberto</span>
+            <span class="numeros-valor">{{ total_saldo|numbr(0) }} t</span>
+        </div>
+        <div class="numeros-item">
+            <span class="numeros-rotulo">Tempo médio de carregamento</span>
+            <span class="numeros-valor numeros-falta">Aguardando NetSuite</span>
+        </div>
+    </div>
+</section>
 
-{% if sem_prazo %}
-<div class="aviso-dados-exemplo" style="border-color:var(--gold); font-weight:500;">
-    ⚠ {{ sem_prazo }} pedido{{ "s" if sem_prazo != 1 else "" }} nesta visao ainda sem Data Limite de Retirada definida —
-    sem essa data nao da pra calcular o Ton/Dia e priorizar direito. Preencha assim que souber o prazo combinado com o cliente.
+{% if sem_prazo and not encerrados %}
+<div class="aviso-dados-exemplo aviso-alerta">
+    <i data-lucide="triangle-alert"></i> {{ sem_prazo }} pedido{{ "s" if sem_prazo != 1 else "" }} sem data limite de retirada: sem ela não dá
+    para calcular o Ton/dia. Eles estão na <a href="/logistica/fila">Fila da logística</a>.
 </div>
 {% endif %}
 
 <form method="get" action="/logistica" class="form-inline">
-    <label style="position:relative;">Buscar cliente, codigo ou pedido
+    <input type="hidden" name="visao" value="{{ filtros.visao }}">
+    <label style="position:relative;">Buscar cliente, código ou pedido
         <input type="text" name="cliente" id="busca-cliente" value="{{ filtros.cliente }}"
-               placeholder="Nome, codigo ou numero do pedido..." autocomplete="off">
+               placeholder="Nome, código ou número do pedido..." autocomplete="off">
         <div id="busca-sugestoes" class="autocomplete-lista"></div>
     </label>
     <label>Data pedido de<input type="date" name="data_de" value="{{ filtros.data_de }}"></label>
-    <label>ate<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
+    <label>até<input type="date" name="data_ate" value="{{ filtros.data_ate }}"></label>
     <label>Estado
         <select name="uf">
             <option value="">Todos</option>
@@ -41,65 +67,80 @@
         </select>
     </label>
     <button type="submit">Filtrar</button>
-    {% if filtros.data_de or filtros.data_ate or filtros.uf or filtros.produto or filtros.cliente %}<a class="back-btn" href="/logistica" style="margin-bottom:0;">Limpar</a>{% endif %}
+    {% if filtros.data_de or filtros.data_ate or filtros.uf or filtros.produto or filtros.cliente %}<a class="back-btn" href="/logistica{{ '?visao=encerrados' if encerrados }}">Limpar</a>{% endif %}
 </form>
-<p class="aviso-dados-exemplo" style="margin-top:0.8rem;">
-    Os filtros de Estado e Produto ja estao prontos, mas so vao funcionar de verdade quando a integracao com o NetSuite trouxer esses dados por pedido.
+<nav class="visao-abas" aria-label="Visão">
+    <a class="visao-aba {{ 'ativo' if not encerrados }}" href="/logistica">Em aberto <span>{{ total_abertos }}</span></a>
+    <a class="visao-aba {{ 'ativo' if encerrados }}" href="/logistica?visao=encerrados">Encerrados <span>{{ total_encerrados }}</span></a>
+</nav>
+{% if not importacao %}
+<p class="aviso-dados-exemplo" style="margin-top:12px;">
+    <i data-lucide="info"></i> Os filtros de Estado e Produto só funcionam depois de importar a planilha de Expedição (ou com o NetSuite).
 </p>
+{% endif %}
 
-<table class="tabela" id="tabela-pedidos" style="margin-top:1rem;">
+<div class="table-wrap" style="margin-top:16px;">
+<table class="tabela tabela-logistica" id="tabela-pedidos">
     <thead>
         <tr>
             <th>Cliente</th>
             <th>Pedido</th>
-            <th>Volume (t)</th>
-            <th>Saldo (t)</th>
+            <th class="num" title="Saldo a retirar, de quanto foi vendido">Saldo (t)</th>
             <th>Vendedor</th>
-            <th>Data Pedido</th>
-            <th>Data Limite Retirada</th>
-            <th>Dias Restantes</th>
-            <th>Ton/Dia Necessario</th>
-            <th>Contato</th>
+            <th>Data pedido</th>
+            <th>Prazo de retirada</th>
+            <th class="num" title="Dias restantes até o prazo de retirada">Dias</th>
+            <th class="num" title="Toneladas por dia necessárias para retirar o saldo até o prazo">Ton/dia</th>
+            <th aria-label="Ações"></th>
         </tr>
     </thead>
     <tbody>
         {% for p in pedidos %}
         <tr id="row-{{ p.id }}" class="{% if p.vencido() %}linha-vencida{% endif %}">
-            <td><a href="/clientes/pedidos?nome={{ p.cliente|urlencode }}">{{ p.cliente }}</a></td>
-            <td>
-                {{ p.numero_pedido }}
-                {% if p.possivel_pedido_parado() %}<br><span class="badge-vencido" style="background:var(--gold);">PAROU DE RETIRAR</span>{% endif %}
+            <td class="col-cliente">
+                <a href="/clientes/pedidos?nome={{ p.cliente|urlencode }}" title="Abrir o pedido: etapas, próximo passo e contato"
+                   onclick="abrirAnotacao({{ p.id }}, '/logistica'); return false;">{{ p.cliente }}</a>
+                <span class="sub" title="{{ 'Cidade do cadastro do cliente no CRM' if p.cidade_fonte == 'CRM' else '' }}">{{ p.cidade ~ "/" if p.cidade }}{{ p.uf or "" }}</span>
+                {% if p.situacao_rotulo %}<button type="button" class="chip-expedicao chip-exp-{{ p.situacao_logistica }}"
+                      title="{{ p.comentario_logistica or 'Sem comentário' }}" onclick="abrirAnotacao({{ p.id }}, '/logistica')">{{ p.situacao_rotulo }}</button>{% endif %}
+                {% if p.local_fonte == "transportadora sem destino" %}<button type="button" class="chip-falta-destino"
+                      title="Venda para transportadora: o local de entrega é o do cliente final, não o da transportadora"
+                      onclick="abrirAnotacao({{ p.id }}, '/logistica')"><i data-lucide="truck"></i>Falta destino final</button>{% endif %}
             </td>
-            <td>{{ p.quant_total|numbr }}</td>
-            <td>{{ p.saldo|numbr }}</td>
-            <td>{{ p.vendedor or "-" }}</td>
-            <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}</td>
+            <td class="col-pedido">
+                {% for parte in p.numero_pedido.split("/") %}{% if not loop.first %}/<wbr>{% endif %}{{ parte }}{% endfor %}
+                {% if p.possivel_pedido_parado() %}<span class="chip-parou">Parou de retirar</span>{% endif %}
+            </td>
+            <td class="num">{{ p.saldo|numbr }}<span class="sub">de {{ p.quant_total|numbr }}</span></td>
+            <td class="col-vendedor">{{ p.vendedor or "-" }}</td>
+            <td>{{ p.data_pedido.strftime("%d/%m/%Y") if p.data_pedido else "-" }}
+                <span class="sub">{% if p.ultima_retirada %}últ. retirada {{ p.ultima_retirada.strftime("%d/%m") }}{% elif p.aba_planilha %}nada retirado{% endif %}</span></td>
             <td>
                 <input type="date" class="input-prazo" data-id="{{ p.id }}"
                        value="{{ p.data_limite_retirada.isoformat() if p.data_limite_retirada else '' }}">
             </td>
-            <td class="col-dias">{{ p.dias_restantes() if p.dias_restantes() is not none else "-" }}</td>
-            <td class="col-tondia">
+            <td class="num col-dias">{{ p.dias_restantes() if p.dias_restantes() is not none else "-" }}</td>
+            <td class="num col-tondia">
                 {% if p.vencido() %}<span class="badge badge-vencido">VENCIDO</span>
                 {% elif p.ton_dia_necessario() is not none %}{{ p.ton_dia_necessario()|numbr }}
                 {% else %}-{% endif %}
             </td>
             <td>
-                <a class="back-btn" style="margin-bottom:4px; display:block; text-align:center;" href="/pedidos/{{ p.id }}/conversa">
-                    Falar com vendedor
-                    {% if mensagens_nao_lidas.get(p.id) %}<span class="menu-badge" style="position:static; display:inline-flex; margin-left:4px;">{{ mensagens_nao_lidas[p.id] }}</span>{% endif %}
-                </a>
-                <a class="back-btn" style="margin-bottom:4px; display:block; text-align:center;" href="/clientes/pedidos?nome={{ p.cliente|urlencode }}">Ver cliente e pedidos</a>
-                {% if p.vencido() or p.possivel_pedido_parado() or p.situacao_resolucao %}
-                <a class="back-btn" style="margin-bottom:0; display:block; text-align:center; border-color:var(--gold); color:var(--gold);" href="/pedidos/{{ p.id }}/resolver">
-                    {% if p.situacao_resolucao %}Situacao: {{ resolucao_label.get(p.situacao_resolucao, p.situacao_resolucao) }}{% else %}Resolver pendencia{% endif %}
-                </a>
-                {% endif %}
+                <div class="acoes-linha">
+                    {% set nao_lidas = mensagens_nao_lidas.get(p.id) %}
+                    <a class="btn-tabela-icone" href="/pedidos/{{ p.id }}/conversa"
+                       title="Falar com o vendedor{{ ' (' ~ nao_lidas ~ ' nova' ~ ('s' if nao_lidas != 1 else '') ~ ')' if nao_lidas }}">
+                        <i data-lucide="message-circle"></i>{% if nao_lidas %}<span class="contador">{{ nao_lidas }}</span>{% endif %}
+                    </a>
+                    <button type="button" class="btn-tabela-icone" title="Anotar: situação, data limite e comentário"
+                            onclick="abrirAnotacao({{ p.id }}, '/logistica')"><i data-lucide="notebook-pen"></i></button>
+                </div>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 
 <script>
 document.querySelectorAll(".input-prazo").forEach(function (input) {
@@ -163,4 +204,5 @@ document.querySelectorAll(".input-prazo").forEach(function (input) {
     });
 })();
 </script>
+{% include "_anotacao_logistica_js.html" %}
 {% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% from "_inicio.html" import saudacao_topo, saudacao_celular, painel_tarefas %}
+{% block title %}Início{% endblock %}
+{% block topo_titulo %}{{ saudacao_topo(saudacao, data_extenso, tarefas|length + (1 if urgente else 0), urgente) }}{% endblock %}
+{% block content %}
+{# Inicio do admin em UMA tela (Rafael, 2026-10-04: "muito extensa ... sem rolagem, clean, deixando claro o que precisa
+   ser feito"): saudacao na barra do topo; tarefas (o unico bloco colorido; pagamento a vista = cartao "Prioridade
+   maxima"); Logistica e Vendas; Equipe embaixo (o quadro "Clientes por estado" saiu em 04/10: os numeros por estado
+   ficam no relatorio Market share). Mesmo padrao dos outros Inicios (inicio.py,
+   _inicio.html). Dados em admin_inicio.py. #}
+<div class="ai">
+{{ saudacao_celular(saudacao, data_extenso) }}
+{{ painel_tarefas(urgente, tarefas) }}
+
+{# Ordem (Rafael, 2026-10-04): numeros de Logistica e Vendas em cima; Equipe embaixo, na largura toda, em 2 colunas
+   de vendedores pra caber sem rolagem. #}
+<div class="ai-topo3 ai-topo2 ai-topo-54">
+    <section class="ai-cartao" aria-label="Logística">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Logística <span class="ai-dica" title="{{ logistica.na_fila }} de {{ logistica.abertos }} pedidos em aberto precisam da equipe">{{ logistica.na_fila }} de {{ logistica.abertos }} precisam da equipe</span></h2>
+            <a class="ai-link" href="/logistica/fila">Abrir fila<i data-lucide="chevron-right"></i></a>
+        </div>
+            <div class="ai-nums ai-nums-5">
+                <a class="ai-num" href="/logistica/fila#nivel-vencido" title="Pedidos vencidos ou com prazo apertado">
+                    <span>Prazo crítico</span><b class="{{ 'ai-alerta' if logistica.vencidos or logistica.apertados }}">{{ logistica.vencidos + logistica.apertados }}</b>
+                    <small>{{ logistica.vencidos }} venc. · {{ logistica.apertados }} apert.</small></a>
+                <a class="ai-num" href="/logistica/fila#nivel-parou" title="{{ logistica.nome_parou }} ou {{ logistica.nome_nunca|lower }}">
+                    <span>Parados</span><b>{{ logistica.parados }}</b><small>sem puxar</small></a>
+                {# Expedido e falta entregar (Rafael, 2026-10-04): mesma base do "Vendido na safra" (planilha do NetSuite) #}
+                <a class="ai-num" href="/relatorios?r=retiradas" title="Tudo que já foi entregue dos pedidos da safra {{ vol.safra }} (desde {{ vol.desde.strftime('%d/%m/%Y') }}), pela planilha do NetSuite">
+                    <span>Expedido</span><b>{{ vol.expedido|numbr(0) }} t</b>
+                    <small class="ai-progresso">{% if vol.pct is not none %}<span class="ai-barra" title="{{ vol.pct }}% do total a entregar (expedido + falta entregar) já saiu"><span style="width: {{ vol.pct }}%"></span></span>{{ vol.pct }}%{% endif %}</small></a>
+                <a class="ai-num" href="/relatorios?r=a-retirar" title="Saldo dos {{ vol.abertos }} pedidos em aberto (saldo de pedido finalizado não entra: virou crédito ou foi encerrado)">
+                    <span>Falta entregar</span><b>{{ vol.falta|numbr(0) }} t</b><small>{{ vol.abertos }} pedidos</small></a>
+                <a class="ai-num" href="/logistica/fila" title="Carga necessária por dia para cumprir os prazos (só dos pedidos com prazo)">
+                    <span>Carga por dia</span><b>{{ logistica.carga_dia|numbr(0) }} t</b><small>para os prazos</small></a>
+            </div>
+    </section>
+
+    <section class="ai-cartao" aria-label="Vendas da empresa">
+        <div class="ai-cartao-cab">
+                <h2 class="ai-titulo">Vendas <span class="ai-dica">safra {{ vol.safra }}</span></h2>
+                <a class="ai-link" href="/vendedor/crm/desempenho">Desempenho<i data-lucide="chevron-right"></i></a>
+            </div>
+            <div class="ai-nums">
+                <a class="ai-num" href="/relatorios?r=vendas" title="Tudo o que foi vendido na safra {{ vol.safra }} (pedidos desde {{ vol.desde.strftime('%d/%m/%Y') }}), pela planilha do NetSuite">
+                    <span>Vendido na safra</span><b>{{ vol.vendido|numbr(0) }} t</b><small>{{ vol.pedidos|numbr(0) }} pedidos</small></a>
+                <a class="ai-num" href="/vendedor/crm/desempenho" title="Clientes da carteira com algum registro em 30 dias: {{ kpis.tocados|numbr(0) }} de {{ kpis.total|numbr(0) }}">
+                    <span>Cobertura</span><b>{{ kpis.cobertura }}%</b><small>em 30 dias</small></a>
+                <a class="ai-num" href="/vendedor/crm/pedidos" title="Pedidos do portal em aberto e o volume a retirar">
+                    <span>Pedidos</span><b>{{ kpis.pedidos }}</b><small>em aberto</small></a>
+                <a class="ai-num" href="/relatorios?r=propostas" title="Valor das propostas em negociação">
+                    <span>Propostas</span><b>{{ kpis.valor_propostas }}</b><small>{{ kpis.propostas }} aberta{{ "s" if kpis.propostas != 1 }}</small></a>
+            </div>
+    </section>
+
+</div>
+
+    {# Equipe compacta (Rafael, 2026-10-04: "pode compactar a equipe de vendedores"): uma linha curta por vendedor em
+       colunas (2 ou 3, conforme a largura), na ordem de atencao; zero nao aparece (so o que pede atencao), o significado
+       de cada numero fica no passar o mouse. #}
+    {# Fechada por padrao, so o resumo; abre clicando (Rafael, 2026-10-04: "esconder todos os nomes, abrir clicando para
+       ver os nomes dos vendedores e mais informacoes"). O navegador lembra se a pessoa deixou aberta. #}
+    {% set r = resumo_equipe %}
+    <section class="ai-cartao ai-equipe" aria-label="Equipe">
+        <details class="ai-equipe-det" id="equipe-det">
+        <summary class="ai-equipe-resumo">
+            <div class="ai-cartao-cab">
+                <h2 class="ai-titulo">Equipe <span class="ai-dica">últimos 30 dias</span></h2>
+                <span class="ai-equipe-abrir"><span class="ai-quando-fechado">Ver vendedores</span><span class="ai-quando-aberto">Esconder vendedores</span><i data-lucide="chevron-down"></i></span>
+            </div>
+            <div class="ai-nums ai-nums-6">
+                <span class="ai-num" title="Vendedores com usuário no portal"><span>Vendedores</span><b>{{ r.n }}</b><small>com usuário</small></span>
+                <span class="ai-num" title="Com o portal aberto agora"><span>Online agora</span>
+                    <b><i class="ai-presenca{{ ' on' if r.online }}" id="equipe-online-ponto"></i><span id="equipe-online">{{ r.online }}</span></b><small>portal aberto</small></span>
+                <span class="ai-num" title="Clientes das carteiras com algum registro em 30 dias"><span>Carteira trabalhada</span><b>{{ r.cobertura }}%</b><small>em 30 dias</small></span>
+                <span class="ai-num" title="Clientes com retorno marcado que já passou"><span>Retornos</span>
+                    <b class="{{ 'ai-alerta' if r.atrasados }}">{{ r.atrasados }}</b><small>atrasados</small></span>
+                <span class="ai-num" title="Propostas abertas sem atualização há {{ dias_proposta }}+ dias"><span>Propostas paradas</span>
+                    <b class="{{ 'ai-atencao' if r.paradas }}">{{ r.paradas }}</b><small>há {{ dias_proposta }}+ dias</small></span>
+                <span class="ai-num" title="Vendedores sem nenhum registro no portal"><span>Nunca usaram</span>
+                    <b class="{{ 'ai-atencao' if r.sem_uso }}">{{ r.sem_uso }}</b><small>o portal</small></span>
+            </div>
+        </summary>
+        <ul class="ai-vendedores">
+            {% for v in equipe %}
+            <li class="ai-vendedor">
+                <span class="ai-presenca{{ ' on' if v.online }}" data-vendedor="{{ v.nome }}" title="{{ v.presenca }}" role="img" aria-label="{{ v.presenca }}"></span>
+                <a class="ai-vend-nome" href="{{ v.link }}" title="{{ v.nome }}: atividade nos últimos 30 dias">{{ v.nome }}</a>
+                <a class="ai-vend-pct{{ ' ai-baixo' if v.cobertura < 10 and v.carteira }}" href="{{ v.link_tocados }}"
+                   title="Carteira trabalhada: {{ v.tocados }} de {{ v.carteira }} clientes com registro em 30 dias. Clique para ver quais.">{{ v.cobertura }}%</a>
+                <span class="ai-vend-slot">{% if v.atrasados %}<a class="ai-alerta" href="{{ v.link_atrasados }}" title="Retornos atrasados: clientes com retorno marcado que já passou">{{ v.atrasados }} atras.</a>{% endif %}</span>
+                <span class="ai-vend-slot">{% if v.propostas_paradas %}<a class="ai-atencao" href="{{ v.link_propostas }}" title="Propostas paradas: abertas sem atualização há {{ dias_proposta }}+ dias">{{ v.propostas_paradas }} prop.</a>{% endif %}</span>
+                <span class="ai-vend-ultimo{{ ' ai-atencao' if not v.ultimo or v.dias_sem_registro > 7 }}"
+                      title="{{ 'Último registro no portal: ' ~ v.ultimo.strftime('%d/%m/%Y') if v.ultimo else 'Nenhum registro no portal ainda' }}">
+                    {%- if not v.ultimo %}nunca usou{% elif v.dias_sem_registro == 0 %}hoje{% else %}há {{ v.dias_sem_registro }} d{% endif -%}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        </details>
+    </section>
+</div>
+
+<script>
+// Equipe aberta ou fechada: preferencia de cada pessoa, neste navegador
+(function () {
+    var det = document.getElementById("equipe-det");
+    if (!det) return;
+    try { if (localStorage.getItem("inicio-equipe-aberta") === "1") det.open = true; } catch (e) {}
+    det.addEventListener("toggle", function () {
+        try { localStorage.setItem("inicio-equipe-aberta", det.open ? "1" : "0"); } catch (e) {}
+    });
+})();
+// Bolinhas da equipe: atualiza a cada minuto sem recarregar (presenca.py)
+setInterval(function () {
+    if (document.visibilityState !== "visible") return;
+    fetch("/api/equipe-online").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        if (!d) return;
+        document.querySelectorAll(".ai-presenca[data-vendedor]").forEach(function (b) {
+            var x = d[b.dataset.vendedor];
+            if (!x) return;
+            b.classList.toggle("on", x.online);
+            b.title = x.titulo; b.setAttribute("aria-label", x.titulo);
+        });
+        var n = Object.keys(d).filter(function (k) { return d[k].online; }).length, el = document.getElementById("equipe-online");
+        if (el) { el.textContent = n; document.getElementById("equipe-online-ponto").classList.toggle("on", n > 0); }
+    }).catch(function () {});
+}, 60000);
+</script>
+
+{% endblock %}

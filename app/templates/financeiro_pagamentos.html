@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Pagamentos a confirmar{% endblock %}
+{% block content %}
+<div class="pagina-cab">
+    <div>
+        <h1>Pagamentos a confirmar</h1>
+        <p class="pagina-sub">
+            {% if em_conferencia %}{{ em_conferencia|length }} pedido{{ "s" if em_conferencia|length != 1 }} à vista com comprovante esperando conferência
+            {% else %}Nenhum comprovante esperando conferência{% endif %}
+        </p>
+    </div>
+</div>
+
+<p class="nota" style="margin:-8px 0 16px;">
+    Pedido à vista só é carregado com o pagamento confirmado aqui. Confira se o valor caiu na conta da empresa que
+    fatura o pedido. Comprovante de agendamento não é pagamento.
+</p>
+
+{% if erro %}<div class="erro" style="margin-bottom:1rem;">{{ erro }}</div>{% endif %}
+
+{% for p in em_conferencia %}
+{% set pendentes = p.comprovantes_pendentes() %}
+{% set espera = agora - (pendentes|map(attribute="criado_em")|min) %}
+{% set ja_confirmado = p.comprovantes|selectattr("status", "equalto", "confirmado")|list %}
+<div class="produto-card pagamento-card" id="pagamento-{{ p.id }}">
+    <div class="pagamento-card-cab">
+        <div>
+            <h3 style="margin:0;">
+                {% if user.role == "admin" %}<a href="/crm/cliente/{{ p.cliente.id }}?aba=pedidos#pedido-{{ p.id }}">{{ p.cliente.fazenda }}</a>
+                {% else %}{{ p.cliente.fazenda }}{% endif %}
+            </h3>
+            <div class="pagamento-card-meta">
+                Pedido {{ p.codigo }} · {{ p.cliente.cidade ~ ", " if p.cliente.cidade }}{{ p.cliente.uf }}
+                {% if p.cliente.vendedor_nome %} · vendedor {{ p.cliente.vendedor_nome }}{% endif %}
+            </div>
+        </div>
+        <span class="log-badge {{ 'gold' if espera.days >= 1 else 'blue' }}">
+            {% if espera.days >= 1 %}esperando há {{ espera.days }} dia{{ "s" if espera.days != 1 }}
+            {% elif espera.seconds >= 3600 %}esperando há {{ espera.seconds // 3600 }}h
+            {% else %}chegou agora{% endif %}
+        </span>
+    </div>
+
+    <div class="pagamento-valor">
+        <span class="pagamento-valor-rotulo">Valor do pedido</span>
+        <span class="pagamento-valor-num">R$ {{ p.valor_total()|numbr(2) }}</span>
+        <span class="pagamento-valor-det">{{ p.produto }} · {{ p.volume|numbr(1) }} t a R$ {{ p.preco|numbr(2) }}/t</span>
+    </div>
+    {% if ja_confirmado %}
+    <div class="campo-aviso aviso-similar ativo" style="margin:0 0 10px;">
+        Este pedido já tinha pagamento confirmado e foi renegociado para um valor maior. Confira se o novo comprovante cobre a diferença.
+    </div>
+    {% endif %}
+
+    <div class="ficha-grid" style="margin-bottom:10px;">
+        <div class="field2"><label>Fatura</label><div class="valor">{{ p.subsidiaria_nome or "Não informado" }}{% if p.subsidiaria_cnpj %}<br><span class="pagamento-card-meta">CNPJ {{ p.subsidiaria_cnpj }}</span>{% endif %}</div></div>
+        <div class="field2"><label>Pagador esperado</label><div class="valor">{{ p.faturamento_nome }}<br><span class="pagamento-card-meta">{{ p.faturamento_documento }}</span></div></div>
+    </div>
+
+    <div class="pagamento-comprovantes">
+        <label>Comprovante{{ "s" if p.comprovantes|length > 1 }}</label>
+        {% for c in p.comprovantes %}
+        <div class="pagamento-comprovante {{ 'pendente' if c.status == 'pendente' }}">
+            <a href="/crm/cliente/{{ p.cliente.id }}/pedido/{{ p.id }}/comprovante/{{ c.id }}" target="_blank"><i data-lucide="paperclip"></i>Abrir comprovante</a>
+            <span class="pagamento-card-meta">enviado em {{ c.criado_em.strftime("%d/%m/%Y %H:%M") }}{{ " por " ~ c.autor if c.autor }}</span>
+            {% if c.status == "pendente" %}<span class="log-badge blue">para conferir</span>
+            {% elif c.status == "confirmado" %}<span class="log-badge green">já confirmado</span>
+            {% else %}<span class="log-badge red">recusado</span> <span class="pagamento-card-meta">{{ c.motivo_recusa }}</span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="btn-row" style="margin-top:12px;">
+        <form method="post" action="/financeiro/pagamentos/{{ p.id }}/confirmar" style="margin:0;">
+            <input type="hidden" name="valor_conferido" value="{{ '%.2f'|format(p.valor_total()) }}">
+            <button type="submit" class="btn-confirmar"><i data-lucide="badge-check"></i>Confirmar pagamento e liberar carregamento</button>
+        </form>
+        <button type="button" class="btn-red" onclick="abrirRecusa({{ p.id }})">Recusar comprovante</button>
+    </div>
+    <div id="recusa-{{ p.id }}" class="pagamento-recusa" hidden>
+        <form method="post" action="/financeiro/pagamentos/{{ p.id }}/recusar">
+            <input type="hidden" name="valor_conferido" value="{{ '%.2f'|format(p.valor_total()) }}">
+            <label>Por que o comprovante foi recusado?</label>
+            <div class="rc-chips" style="margin:6px 0 10px;">
+                {% for m in motivos_recusa %}
+                <label class="rc-chip"><input type="radio" name="motivo" value="{{ m }}" required>{{ m }}</label>
+                {% endfor %}
+            </div>
+            <input type="text" name="detalhe" placeholder="Detalhe para o vendedor (obrigatório se escolher Outro)" style="width:100%; margin-bottom:10px;">
+            <button type="submit" class="btn-red">Recusar e avisar o vendedor</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div class="card pagamento-vazio">
+    <i data-lucide="circle-check-big"></i>
+    <div>Tudo conferido. Quando um vendedor anexar um comprovante, ele aparece aqui.</div>
+</div>
+{% endfor %}
+
+{% if esperando_vendedor %}
+<details class="historico-periodo" style="margin-top:24px;">
+    <summary>Pedidos à vista esperando o vendedor <span class="historico-periodo-contagem">({{ esperando_vendedor|length }})</span></summary>
+    <div class="table-wrap" style="margin-top:8px;">
+    <table class="tabela">
+        <thead><tr><th>Cliente</th><th>Pedido</th><th>Valor</th><th>Situação</th><th>Gerado em</th></tr></thead>
+        <tbody>
+            {% for p in esperando_vendedor %}
+            {% set situacao = p.situacao_pagamento() %}
+            <tr>
+                <td>{{ p.cliente.fazenda }}{% if p.cliente.vendedor_nome %}<br><span class="pagamento-card-meta">{{ p.cliente.vendedor_nome }}</span>{% endif %}</td>
+                <td>{{ p.codigo }}</td>
+                <td>R$ {{ p.valor_total()|numbr(2) }}</td>
+                <td>{{ {"sem_comprovante": "Sem comprovante", "recusado": "Comprovante recusado", "diferenca": "Falta a diferença (renegociado)"}[situacao] }}</td>
+                <td>{{ p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</details>
+{% endif %}
+
+{% if conferidos %}
+<h2 class="secao-titulo">Conferidos recentemente</h2>
+<div class="table-wrap">
+<table class="tabela">
+    <thead><tr><th>Conferido em</th><th>Cliente</th><th>Pedido</th><th>Resultado</th><th>Por</th></tr></thead>
+    <tbody>
+        {% for c in conferidos %}
+        <tr>
+            <td>{{ c.conferido_em.strftime("%d/%m/%Y %H:%M") }}</td>
+            <td>{{ c.pedido.cliente.fazenda }}</td>
+            <td>{{ c.pedido.codigo }} · <a href="/crm/cliente/{{ c.pedido.cliente.id }}/pedido/{{ c.pedido.id }}/comprovante/{{ c.id }}" target="_blank">comprovante</a></td>
+            <td>{% if c.status == "confirmado" %}<span class="log-badge green">confirmado</span>
+                {% else %}<span class="log-badge red">recusado</span> <span class="pagamento-card-meta">{{ c.motivo_recusa }}</span>{% endif %}</td>
+            <td>{{ c.conferido_por }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endif %}
+
+<script>
+function abrirRecusa(id) {
+    var bloco = document.getElementById("recusa-" + id);
+    bloco.hidden = !bloco.hidden;
+    if (!bloco.hidden) levarAte(bloco, {bloco: "center", focar: false});
+}
+</script>
+{% endblock %}

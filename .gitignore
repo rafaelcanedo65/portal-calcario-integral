@@ -9,3 +9,13 @@ cookies.txt
 # historico do git. Se um dev novo precisar dele pra testar, compartilhe o
 # arquivo separadamente (nao pelo repositorio) e rode `python -m app.crm_import_real`.
 crm_dados_reais.json
+
+# Contratos de cessao de credito enviados pelo sistema (dado de 3 partes).
+uploads/
+
+# E-mails do modo de teste (sem SMTP configurado): podem ter links de senha
+emails_teste/
+
+# Copias antigas compactadas (.git antigo pode ter dado real de cliente: nunca versionar)
+.git1.zip
+.claude1.zip

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Criar senha nova{% endblock %}
+{% block content %}
+<div class="login-box">
+    <div class="login-marca"><img class="marca-logo" src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso"></div>
+    {% if valido %}
+    <h1>Criar senha nova</h1>
+    <p class="login-texto">Usuário <b>{{ usuario }}</b>. Use pelo menos 8 caracteres, com letras e números.</p>
+    {% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+    <form method="post" action="/redefinir-senha">
+        <input type="hidden" name="t" value="{{ token }}">
+        <label for="nova">Senha nova</label>
+        <input type="password" id="nova" name="nova" required minlength="8" autocomplete="new-password" autofocus>
+        <label for="confirma">Repita a senha nova</label>
+        <input type="password" id="confirma" name="confirma" required minlength="8" autocomplete="new-password">
+        <button type="submit">Salvar senha</button>
+    </form>
+    {% else %}
+    <h1>Link vencido</h1>
+    <p class="login-texto">Esse link já foi usado ou passou dos 30 minutos. Peça um novo, leva um minuto.</p>
+    <a class="btn btn-primario login-btn" href="/esqueci-senha">Pedir link novo</a>
+    <p class="login-ajuda"><a href="/login">Voltar para a entrada</a></p>
+    {% endif %}
+</div>
+{% endblock %}

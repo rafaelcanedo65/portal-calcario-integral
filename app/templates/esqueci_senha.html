@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Esqueci minha senha{% endblock %}
+{% block content %}
+<div class="login-box">
+    <div class="login-marca"><img class="marca-logo" src="/static/img/logo-integral.png" alt="Integral Calcário e Gesso"></div>
+    {% if enviado %}
+    <h1>Confira seu e-mail</h1>
+    <p class="login-texto">Se esse acesso existir e tiver e-mail cadastrado, enviamos um link para criar uma senha nova.
+        Ele vale por 30 minutos.</p>
+    <p class="login-texto">Não tem e-mail cadastrado? O administrador já foi avisado e vai te passar uma senha temporária.</p>
+    <a class="btn btn-primario login-btn" href="/login">Voltar para a entrada</a>
+    {% else %}
+    <h1>Esqueci minha senha</h1>
+    <p class="login-texto">Informe seu usuário ou e-mail. Vamos enviar um link para você criar uma senha nova.</p>
+    <form method="post" action="/esqueci-senha">
+        <label for="esq-id">Usuário ou e-mail</label>
+        <input type="text" id="esq-id" name="identificacao" required autofocus autocapitalize="none">
+        <button type="submit">Enviar link</button>
+    </form>
+    <p class="login-ajuda"><a href="/login">Voltar para a entrada</a></p>
+    {% endif %}
+</div>
+{% endblock %}

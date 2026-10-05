@@ -1,15 +1,23 @@
-"""Popula o CRM (crm_clientes, crm_contatos, crm_area_estados) com dados de
-EXEMPLO, so para validar as telas de design antes de ligar na planilha
-"Controle" de verdade (que ainda precisa ser entendida/organizada).
+"""Popula um banco NOVO com dados FICTICIOS (usuarios, clientes do CRM, area
+por estado, parceiros de plano safra) -- pra rodar o portal sem os dados
+reais de clientes (que nao saem da empresa, LGPD).
 
 Uso:
     python -m app.crm_seed
+
+Usuarios criados (senha de todos: troque-esta-senha): admin, logistica,
+financeiro e um por vendedor ficticio (ex: ana.exemplo). Toda entrada pede
+usuario e senha.
 """
 import datetime as dt
 import random
 
+from .auth import hash_password
 from .database import Base, SessionLocal, engine
-from .models import FASES_CRM, AreaEstado, ClienteCRM, ContatoCRM, User
+from .import_data import slugify
+from .models import AreaEstado, ClienteCRM, ContatoCRM, ParceiroCessao, User
+
+SENHA_PADRAO = "troque-esta-senha"
 
 random.seed(42)
 
@@ -42,10 +50,7 @@ SUFIXOS_FAZENDA = ["Agropecuaria", "Fazenda", "Agro", "Grupo"]
 
 FORMAS_PAGAMENTO = ["Boleto 30 dias", "A vista", "Boleto 60 dias", None]
 
-VENDEDORES = [
-    "Monica Silva Oliveira", "Zilma Bispo Reis", "Wagner Souza dos Santos",
-    "Sidney Passos de Sousa", "Camila Freitas SANTOS", "Elaine Vasconcelos",
-]
+VENDEDORES = ["Ana Exemplo", "Bruno Exemplo", "Carla Exemplo"]
 
 # distribuicao aproximada de fase, inspirada no mockup (maioria ainda no topo do funil)
 PESOS_FASE = {"a_contactar": 35, "contactado": 25, "proposta": 12,
@@ -97,10 +102,30 @@ def gerar_clientes(qtd_por_uf=14):
     return clientes
 
 
+def criar_usuarios(db):
+    if db.query(User).count() > 0:
+        return
+    senha = hash_password(SENHA_PADRAO)
+    db.add(User(username="admin", password_hash=senha, nome_completo="Administrador", role="admin"))
+    db.add(User(username="logistica", password_hash=senha, nome_completo="Logistica", role="logistica"))
+    db.add(User(username="financeiro", password_hash=senha, nome_completo="Financeiro", role="financeiro"))
+    for nome in VENDEDORES:
+        db.add(User(username=slugify(nome), password_hash=senha, nome_completo=nome, role="vendedor",
+                    vendedor_nome=nome))
+    # CNPJ do parceiro e obrigatorio -- estes sao FICTICIOS, so com os digitos
+    # verificadores certos pra passar na validacao
+    for nome, cnpj in (("Parceiro Exemplo A", "11.222.333/0001-81"), ("Parceiro Exemplo B", "11.444.777/0001-61")):
+        db.add(ParceiroCessao(nome=nome, cnpj=cnpj, ativo=True))
+    db.commit()
+    print(f"Usuarios criados (senha: {SENHA_PADRAO}): admin, logistica, financeiro, "
+          + ", ".join(slugify(n) for n in VENDEDORES))
+
+
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        criar_usuarios(db)
         if db.query(ClienteCRM).count() > 0:
             print("Ja existem clientes no CRM, nada foi alterado. "
                   "Apague a tabela crm_clientes manualmente se quiser regerar os dados de exemplo.")

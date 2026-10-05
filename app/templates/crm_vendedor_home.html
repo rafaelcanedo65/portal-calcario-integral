@@ -1,37 +1,69 @@
 {% extends "base.html" %}
-{% block title %}CRM{% endblock %}
+{% from "_inicio.html" import saudacao_topo, saudacao_celular, painel_tarefas %}
+{% block title %}Início{% endblock %}
+{% block topo_titulo %}{{ saudacao_topo(saudacao, data_extenso, tarefas|length + (1 if urgente else 0), urgente) }}{% endblock %}
 {% block content %}
-<p style="color:var(--ink-soft); font-size:0.85rem;">Ola,</p>
-<h1>{{ user.nome_completo }}</h1>
+{# Inicio do vendedor no padrao das paginas iniciais (Rafael, 2026-10-04): tarefas no topo (prioridade maxima =
+   comprovante do pedido a vista: o caminhao so carrega com o pagamento confirmado; depois os motivos da fila de
+   trabalho, na ordem da pagina Regras, e os cadastros), numeros neutros e "Comece por aqui". Uma tela sem rolagem. #}
+<div class="ai">
+{{ saudacao_celular(saudacao, data_extenso) }}
+{{ painel_tarefas(urgente, tarefas, vazio="Nenhuma pendência urgente. Sua carteira está em dia.", rodape=rodape) }}
 
-{% if compradores_mes > 0 %}
-<a href="/vendedor/crm/fase/a_contactar?ordenar=sazonalidade" class="aviso-compra-mes">
-    🗓️ <b>{{ compradores_mes }}</b> cliente{{ "s" if compradores_mes != 1 }} costuma{{ "m" if compradores_mes != 1 }}
-    comprar em <b>{{ mes_atual_nome }}</b> — bom momento pra entrar em contato ›
-</a>
-{% endif %}
+<div class="ai-topo3 ai-topo2">
+    <section class="ai-cartao" aria-label="Seus números">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Seus números <span class="ai-dica">últimos 30 dias</span></h2>
+            <a class="ai-link" href="/vendedor/crm/desempenho">{{ "Meu desempenho" if user.role == "vendedor" else "Desempenho" }}<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/vendedor/crm/desempenho" title="Clientes da carteira com algum registro em 30 dias (comparado com os 30 dias anteriores)">
+                <span>Cobertura</span><b>{{ kpis.cobertura }}%</b>
+                <small>{% if kpis.cobertura_delta is not none and kpis.cobertura_delta != 0 %}{{ "+" if kpis.cobertura_delta > 0 }}{{ kpis.cobertura_delta }} pts · {% endif %}{{ kpis.tocados }} de {{ kpis.total }}</small></a>
+            <a class="ai-num" href="/vendedor/crm/desempenho"><span>Vendido</span><b>{{ kpis.volume_vendido|numbr(0) }} t</b>
+                <small>{{ kpis.vendas }} cliente{{ "s" if kpis.vendas != 1 }}</small></a>
+            <a class="ai-num" href="/vendedor/crm/pedidos" title="Pedidos do portal em aberto e o volume a retirar">
+                <span>Pedidos abertos</span><b class="{{ 'ai-alerta' if kpis.pedidos_vencidos }}">{{ kpis.pedidos }}</b>
+                <small>{% if kpis.pedidos_vencidos %}{{ kpis.pedidos_vencidos }} vencido{{ "s" if kpis.pedidos_vencidos != 1 }}{% else %}{{ kpis.volume_a_retirar|numbr(0) }} t a retirar{% endif %}</small></a>
+            <a class="ai-num" href="/vendedor/crm/fila" title="Valor das propostas em negociação"><span>Propostas</span><b>{{ kpis.valor_propostas }}</b>
+                <small>{{ kpis.propostas }} aberta{{ "s" if kpis.propostas != 1 }}</small></a>
+        </div>
+    </section>
 
-<div class="menu-grid">
-    <a class="menu-card" href="/vendedor/crm/carteira">
-        <span class="micon">📋</span>
-        <div class="mlabel">Carteira de Clientes</div>
-        <div class="msub">{{ total_clientes }} clientes</div>
-    </a>
-    <a class="menu-card" href="/vendedor/crm/agenda">
-        <span class="micon">📅</span>
-        <div class="mlabel">Agenda</div>
-        <div class="msub">Retornos agendados</div>
-    </a>
-    <a class="menu-card" href="/vendedor/crm/fase/a_contactar" style="position:relative;">
-        <span class="micon">🔔</span>
-        <div class="mlabel">Avisos</div>
-        <div class="msub">{{ novos_aviso }} para contactar</div>
-        {% if novos_aviso %}<span class="menu-badge">{{ novos_aviso }}</span>{% endif %}
-    </a>
-    <a class="menu-card" href="/crm/cliente/novo">
-        <span class="micon">➕</span>
-        <div class="mlabel">Cadastrar Cliente</div>
-        <div class="msub">Novo cliente na carteira</div>
-    </a>
+    <section class="ai-cartao" aria-label="Comissão e carteira">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">{{ "Minha comissão" if user.role == "vendedor" else "Comissão" }} <span class="ai-dica">liberada quando o cliente paga</span></h2>
+            <a class="ai-link" href="/vendedor/crm/desempenho">Detalhes<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/vendedor/crm/desempenho" title="Comissão dos pagamentos recebidos neste mês">
+                <span>Liberada no mês</span><b>{{ reais_compacto(comissao.liberada) }}</b><small>clientes pagaram</small></a>
+            <a class="ai-num" href="/vendedor/crm/desempenho" title="Comissão do que os clientes ainda vão pagar">
+                <span>A liberar</span><b>{{ reais_compacto(comissao.a_liberar) }}</b><small>quando pagarem</small></a>
+            <a class="ai-num" href="/vendedor/crm/carteira"><span>Carteira</span><b>{{ total_clientes|numbr(0) }}</b><small>clientes</small></a>
+            {% if dias_ate_ciclo is not none %}
+            <span class="ai-num" title="A carteira reinicia sozinha para prospecção no dia da virada"><span>Nova safra</span><b>{{ dias_ate_ciclo }} dia{{ "s" if dias_ate_ciclo != 1 }}</b><small>safra {{ proximo_ciclo }}</small></span>
+            {% else %}
+            <a class="ai-num" href="/crm/cliente/novo" title="Clientes novos cadastrados neste ciclo"><span>Novos no ciclo</span><b>{{ novos_no_ciclo }}</b><small>cadastrados</small></a>
+            {% endif %}
+        </div>
+    </section>
+</div>
+
+<section class="ai-cartao" aria-label="Comece por aqui">
+    <div class="ai-cartao-cab"><h2 class="ai-titulo">Comece por aqui</h2>
+        <a class="ai-link" href="/vendedor/crm/fila">Fila de trabalho ({{ fila_total }})<i data-lucide="chevron-right"></i></a></div>
+    {% if primeiros %}
+    <div class="ai-linhas" style="--cols: 170px minmax(0, 1.4fr) minmax(0, 2fr);">
+        {% for i in primeiros %}
+        <a class="ai-linha" href="/crm/cliente/{{ i.cliente.id }}?via=fila">
+            <span class="reg-status fase-{{ i.cor }}">{{ i.etiqueta }}</span>
+            <b>{{ i.cliente.fazenda|nome_cliente }}</b>
+            <span class="ai-mudo">{{ i.texto }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}<p class="ai-mudo">Fila vazia: sua carteira está em dia.</p>{% endif %}
+</section>
 </div>
 {% endblock %}

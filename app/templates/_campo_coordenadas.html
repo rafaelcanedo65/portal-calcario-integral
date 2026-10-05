@@ -1,0 +1,62 @@
+{# Coordenadas da fazenda (cadastro novo e editar). Rafael, 2026-10-03: o vendedor
+   na fazenda usa a localizacao do celular; o ponto vira o local de entrega dos
+   pedidos (Logistica, mapa e rota no Google Maps). Aceita "lat, lon", link do
+   Google Maps e graus/minutos/segundos -- a leitura e a mesma do servidor
+   (models.ler_coordenadas), conferida enquanto digita. Precisa de: coord_valor. #}
+<div class="field2" style="grid-column:1/3;">
+    <label for="coordenadas">Coordenadas da fazenda</label>
+    <div style="display:flex; gap:8px;">
+        <input type="text" name="coordenadas" id="coordenadas" value="{{ coord_valor or '' }}" autocomplete="off"
+               placeholder="-3.002100, -47.352700 ou link do Google Maps" style="flex:1; width:auto; min-width:0;">
+        <button type="button" class="btn-secondary" onclick="usarLocalizacaoAtual()" style="white-space:nowrap;"><i data-lucide="locate-fixed"></i> Usar minha localização</button>
+    </div>
+    <p class="coord-status" id="coord-status" aria-live="polite">Pelo celular, use o botão quando estiver na fazenda para preencher automaticamente.</p>
+</div>
+<script>
+(function () {
+    var campo = document.getElementById("coordenadas");
+    var status = document.getElementById("coord-status");
+    var dica = status.textContent;
+    var timer = null;
+    var precisao = null;  // metros, quando veio do GPS
+    function conferir() {
+        var texto = campo.value.trim();
+        if (!texto) { status.className = "coord-status"; status.textContent = dica; return; }
+        var dados = new FormData(); dados.append("texto", texto);
+        fetch("/api/crm-ler-coordenadas", {method: "POST", body: dados}).then(function (r) { return r.json(); }).then(function (r) {
+            if (campo.value.trim() !== texto) return;  // ja digitou outra coisa
+            status.innerHTML = "";
+            if (r.ok) {
+                status.className = "coord-status coord-ok";
+                status.append("Ponto lido: " + r.texto + " · ");
+                var a = document.createElement("a");
+                a.href = r.link; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Ver no Google Maps";
+                status.appendChild(a);
+                if (precisao > 200) status.append(" · precisão de uns " + Math.round(precisao) + " m (melhor com o GPS ligado e ao ar livre)");
+            } else {
+                status.className = "coord-status coord-erro";
+                status.textContent = "Não reconhecemos isso como coordenada. Use o botão, o formato -3.0021, -47.3527 ou cole o link do Google Maps.";
+            }
+        }).catch(function () {});
+    }
+    campo.addEventListener("input", function () { precisao = null; clearTimeout(timer); timer = setTimeout(conferir, 400); });
+    if (campo.value.trim()) conferir();
+
+    window.usarLocalizacaoAtual = function () {
+        if (!window.isSecureContext) {
+            alert("A localização do celular só funciona com o portal em endereço seguro (https, com cadeado). Por enquanto, copie a coordenada do Google Maps e cole no campo.");
+            return;
+        }
+        if (!navigator.geolocation) { alert("Geolocalização não está disponível neste navegador."); return; }
+        status.className = "coord-status"; status.textContent = "Buscando sua localização...";
+        navigator.geolocation.getCurrentPosition(function (pos) {
+            campo.value = pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6);
+            precisao = pos.coords.accuracy;
+            conferir();
+        }, function () {
+            status.className = "coord-status coord-erro";
+            status.textContent = "Não foi possível obter sua localização. Verifique se o navegador tem permissão de localização (GPS).";
+        }, {enableHighAccuracy: true, timeout: 15000});
+    };
+})();
+</script>

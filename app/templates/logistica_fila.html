@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Fila da logística{% endblock %}
+{% block content %}
+{# Fila da Logistica com prioridade (Rafael, 2026-10-03): carregar "sem apertar e sem
+   esquecer nenhum pedido". Niveis em expedicao.py (niveis, nivel_fila); ordem e nomes na pagina Regras. #}
+{% set explica = {
+    "respondeu": "O vendedor respondeu a uma cobrança. Leia a resposta e atualize o pedido.",
+    "vencido": "O prazo combinado passou e ainda tem saldo. Combine uma nova data ou encerre.",
+    "apertado": "Precisa de mais de " ~ regras.ton_dia ~ " t por dia, ou faltam até " ~ regras.dias_prazo ~ " dias. Confirme com o cliente antes que aperte.",
+    "sem_resposta": "O vendedor foi cobrado há " ~ regras.dias_cobranca ~ " dias ou mais e não respondeu.",
+    "parou": "Já retirou, mas está há " ~ regras.dias_parou ~ " dias ou mais sem puxar. Mais tempo parado primeiro.",
+    "nunca": "Pedido de " ~ regras.dias_nunca ~ " dias ou mais sem nenhuma retirada. Mais antigo primeiro.",
+    "sem_prazo": "O cliente não informou o prazo ao emitir o pedido. Maior saldo primeiro.",
+} %}
+<div class="pagina-cab">
+    <div>
+        <h1>Fila da logística</h1>
+        <p class="pagina-sub" id="fila-resumo">{{ ind.na_fila }} de {{ ind.em_aberto }} pedidos em aberto precisam da equipe, do mais urgente para o menos</p>
+        {% if importacao %}
+        <p class="fonte-dados"><i data-lucide="sheet"></i>Pedidos da planilha {{ importacao.fonte }} de
+            {{ importacao.atualizada_em.strftime("%d/%m/%Y às %H:%M") if importacao.atualizada_em else "data não informada" }}</p>
+        {% endif %}
+    </div>
+    <a class="btn btn-secundario-claro" href="/logistica/regiao"><i data-lucide="map-pin"></i>Pedidos por região</a>
+</div>
+
+{# Sem apertar e sem esquecer #}
+<section class="numeros numeros-topo" aria-label="Indicadores da logística">
+    <div class="numeros-itens">
+        <div class="numeros-item"><span class="numeros-rotulo">Carga necessária por dia</span>
+            <span class="numeros-valor">{{ ind.carga_dia|numbr(0) }} t</span>
+            <span class="numeros-sub">somando os {{ ind.com_prazo }} pedidos com prazo em dia</span></div>
+        <div class="numeros-item"><span class="numeros-rotulo">Sem data limite</span>
+            <span class="numeros-valor">{{ ind.sem_prazo }}</span>
+            <span class="numeros-sub">de {{ ind.em_aberto }} em aberto</span></div>
+        <div class="numeros-item"><span class="numeros-rotulo">Sem nenhuma ação há {{ regras.sem_acao }} dias</span>
+            <span class="numeros-valor {{ 'alerta' if ind.sem_acao_30 }}">{{ ind.sem_acao_30 }}</span>
+            <span class="numeros-sub">sem retirada, anotação nem conversa</span></div>
+        <div class="numeros-item"><span class="numeros-rotulo">Vencidos e apertados</span>
+            <span class="numeros-valor {{ 'alerta' if ind.por_nivel.vencido or ind.por_nivel.apertado }}">{{ ind.por_nivel.vencido + ind.por_nivel.apertado }}</span>
+            <span class="numeros-sub">acima de {{ regras.ton_dia }} t/dia ou até {{ regras.dias_prazo }} dias</span></div>
+    </div>
+</section>
+
+<nav class="fila-niveis" aria-label="Níveis da fila">
+    {% for chave, info in niveis.items() %}{% set rotulo, cor = info %}
+    <a class="fila-nivel-atalho cor-{{ cor }} {{ 'vazio' if not grupos[chave] }}" href="#nivel-{{ chave }}">{{ rotulo }} <b>{{ grupos[chave]|length }}</b></a>
+    {% endfor %}
+</nav>
+
+{% macro item(p, n) %}
+<div class="fila-log-item" id="row-{{ p.id }}" data-nivel="{{ n.chave }}">
+    <div class="fila-log-info">
+        <div class="fila-log-linha1">
+            <a class="fila-log-cliente" href="/clientes/pedidos?nome={{ p.cliente|urlencode }}" title="Abrir o pedido: etapas, próximo passo e contato"
+               onclick="abrirAnotacao({{ p.id }}, '/logistica/fila'); return false;">{{ p.cliente }}</a>
+            {% if p.telefone %}<a class="fila-log-tel" href="tel:{{ p.telefone|telefone_link }}"><i data-lucide="phone"></i>{{ p.telefone }}</a>{% endif %}
+        </div>
+        <span class="fila-log-motivo cor-{{ n.cor }}">{{ n.motivo }}</span>
+        <span class="fila-log-sub">{{ p.numero_pedido }} · {{ p.produto or "produto não informado" }} ·
+            <span title="{{ 'Cidade do cadastro do cliente no CRM' if p.cidade_fonte == 'CRM' else '' }}">{{ p.cidade ~ "/" if p.cidade }}{{ p.uf or "UF não informada" }}</span>
+            · {{ p.vendedor or "sem vendedor" }}</span>
+        {% if p.situacao_rotulo %}
+        <button type="button" class="chip-expedicao chip-exp-{{ p.situacao_logistica }}" title="{{ p.comentario_logistica or 'Sem comentário' }}"
+                onclick="abrirAnotacao({{ p.id }}, '/logistica/fila')">{{ p.situacao_rotulo }}</button>
+        {% endif %}
+        {% if p.local_fonte == "transportadora sem destino" %}
+        <button type="button" class="chip-falta-destino" title="Venda para transportadora: o local de entrega é o do cliente final, não o da transportadora"
+                onclick="abrirAnotacao({{ p.id }}, '/logistica/fila')"><i data-lucide="truck"></i>Falta destino final</button>
+        {% endif %}
+    </div>
+    <div class="fila-log-acao">
+        <label class="fila-log-data">
+            <span>{{ "Nova data limite" if p.data_limite_retirada else "Data limite" }}</span>
+            <input type="date" class="fila-data" data-id="{{ p.id }}" min="{{ hoje.isoformat() }}">
+        </label>
+        <button type="button" class="btn btn-primario fila-salvar" data-id="{{ p.id }}" disabled>Salvar</button>
+        <button type="button" class="btn-tabela-icone fila-anotar" title="Abrir o pedido: próximo passo, conversa e histórico"
+                onclick="abrirAnotacao({{ p.id }}, '/logistica/fila')"><i data-lucide="notebook-pen"></i></button>
+    </div>
+</div>
+{% endmacro %}
+
+{% for chave, info in niveis.items() %}{% set rotulo, cor = info %}
+{% set itens = grupos[chave] %}
+{% if itens %}
+<section class="fila-log-grupo" id="nivel-{{ chave }}">
+    <h2 class="secao-titulo"><span class="fila-nivel-ponto cor-{{ cor }}"></span>{{ rotulo }} <span class="fila-log-contagem">{{ itens|length }}</span></h2>
+    <p class="nota" style="margin:-6px 0 10px;">{{ explica[chave] }}</p>
+    {% for p, n in itens %}
+    {% if loop.index == 21 %}<div class="fila-log-mais" hidden>{% endif %}
+    {{ item(p, n) }}
+    {% if loop.last and loop.length > 20 %}</div>
+    <button type="button" class="btn btn-secundario-claro fila-ver-mais" onclick="this.previousElementSibling.hidden = false; this.remove();">
+        Mostrar os outros {{ loop.length - 20 }}</button>{% endif %}
+    {% endfor %}
+</section>
+{% endif %}
+{% endfor %}
+
+{% include "_anotacao_logistica_js.html" %}
+<script>
+(function () {
+    var hoje = "{{ hoje.isoformat() }}";
+    document.querySelectorAll(".fila-data").forEach(function (campo) {
+        campo.addEventListener("input", function () {
+            document.querySelector('.fila-salvar[data-id="' + campo.dataset.id + '"]').disabled = !campo.value;
+        });
+    });
+    document.querySelectorAll(".fila-salvar").forEach(function (botao) {
+        botao.addEventListener("click", function () {
+            var id = botao.dataset.id;
+            var campo = document.querySelector('.fila-data[data-id="' + id + '"]');
+            if (!campo.value || campo.value <= hoje) {
+                campo.setCustomValidity("Escolha uma data a partir de amanhã");
+                campo.reportValidity();
+                campo.setCustomValidity("");
+                return;
+            }
+            botao.disabled = true;
+            fetch("/api/pedidos/" + id + "/prazo", {method: "POST", body: new URLSearchParams({data_limite: campo.value})})
+                .then(function (r) { if (!r.ok) throw r; return r.json(); })
+                .then(function (dados) {
+                    var item = document.getElementById("row-" + id);
+                    document.getElementById("fila-resumo").textContent = dados.fila + " pedidos em aberto precisam da equipe, do mais urgente para o menos";
+                    if (dados.nivel === item.dataset.nivel) {
+                        // Prazo salvo, mas o motivo continua (ex.: parou de puxar): fica na fila
+                        botao.textContent = "Prazo salvo";
+                        return;
+                    }
+                    // Mudou de nivel ou saiu da fila: tira daqui (na proxima abertura aparece no lugar novo)
+                    var grupo = item.closest(".fila-log-grupo");
+                    fecharAnotacao(id);
+                    item.classList.add("fila-log-saindo");
+                    setTimeout(function () {
+                        item.remove();
+                        grupo.querySelector(".fila-log-contagem").textContent = grupo.querySelectorAll(".fila-log-item").length;
+                    }, 250);
+                })
+                .catch(function () { botao.disabled = false; alert("Não foi possível salvar a data. Tente de novo."); });
+        });
+    });
+})();
+</script>
+{% endblock %}

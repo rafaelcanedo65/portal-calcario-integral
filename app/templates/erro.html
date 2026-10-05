@@ -1,12 +1,23 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-<head><meta charset="UTF-8"><title>Erro</title><link rel="stylesheet" href="/static/style.css"></head>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Algo deu errado · Integral</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_version() }}">
+</head>
 <body>
 <main>
     <div class="login-box">
-        <h1>Ops</h1>
+        <div class="login-marca">
+            <div class="marca-nome">Integral</div>
+            <div class="marca-sub">Calcário e Gesso</div>
+        </div>
+        <h1>Algo deu errado</h1>
         <p class="erro">{{ detail }}</p>
-        <p><a href="/">Voltar</a></p>
+        <a class="back-btn" href="/">Voltar ao início</a>
     </div>
 </main>
 </body>

@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{% block title %}Pedidos por região{% endblock %}
+{% block content %}
+<style>.fab { display: none !important; }</style>{# o "+" de cadastrar cliente cobria a barra de "Avisar vendedores" #}
+{# Pedidos por regiao (Rafael, 2026-10-03/04): "tenho um caminhao indo para X: o que carrego e para quem
+   ofereco?". Tela em uma olhada (2026-10-04, "pagina muito extensa"): busca numa linha, mapa logo abaixo,
+   painel com abas compactas (Carregar / Oferecer) ligado ao mapa, passos na tela vazia. Logica em
+   logistica_regiao.py; oportunidade logistica = clientes sem pedido na regiao. #}
+{# Linha em 2 andares (Rafael, 2026-10-04: "linha larga, tela mais limpa, mais clareza em cada cliente"):
+   esquerda = quem e (nome limpo) + situacao; direita = os numeros (t e km); icones so ao passar o mouse. #}
+{% macro distancia(dist, exato) -%}
+{%- if dist < 1 and not exato %}na cidade{% else %}{{ '' if exato else '≈' }}{{ dist|round|int }} km{% endif -%}
+{%- endmacro %}
+{% macro onde(cidade, uf, dist) -%}
+{#- a cidade so quando ajuda: longe do destino (perto, o "na cidade" ja diz) e com UF so se for outro estado -#}
+{%- if cidade and dist is not none and dist >= 1 %} · {{ cidade }}{{ "/" ~ uf if destino and uf != destino.uf }}{% endif -%}
+{%- endmacro %}
+{% macro item_pedido(p, dist=None) %}
+{% set n = nivel[p.id] %}
+<div class="reg-item reg-item-pedido" data-mapa="{{ ('p' ~ p.id) if p.local_exato else ('c' ~ p.uf ~ '|' ~ p.cidade) if p.cidade else '' }}">
+    <div class="reg-item-corpo">
+        <a class="reg-nome" href="/logistica?abrir={{ p.id }}#row-{{ p.id }}" title="{{ p.cliente }} · abrir o pedido na Logística">{{ p.cliente|nome_cliente }}</a>
+        <span class="reg-item-l2">
+            {%- if n %}<span class="reg-status cor-{{ n.cor }}">{{ n.rotulo }}</span> · {% endif -%}
+            {{ p.produto|produto_legivel or "produto não informado" }} · {{ "retirar até " ~ p.data_limite_retirada.strftime("%d/%m") if p.data_limite_retirada else "sem prazo" }}
+            {{- onde(p.cidade, p.uf, dist) }}</span>
+    </div>
+    <div class="reg-item-num">
+        <b>{{ p.saldo|numbr(0) }} t</b>
+        {% if dist is not none %}<span title="Linha reta {{ 'até a fazenda' if p.local_exato else 'até o centro da cidade' }}">{{ distancia(dist, p.local_exato) }}</span>{% endif %}
+    </div>
+    <div class="reg-item-acoes">
+        {% if p.latitude is not none %}<button type="button" class="reg-ico reg-ver" title="Ver no mapa" aria-label="Ver {{ p.cliente }} no mapa"><i data-lucide="map-pin"></i></button>
+        <button type="button" class="reg-ico regiao-rota" onclick="abrirRota('pedido={{ p.id }}')" title="Rota das plantas" aria-label="Rota até {{ p.cliente }}"><i data-lucide="route"></i></button>{% endif %}
+        {% if p.telefone %}<a class="reg-ico" href="tel:{{ p.telefone|telefone_link }}" title="Ligar: {{ p.telefone }}" aria-label="Ligar para {{ p.cliente }}"><i data-lucide="phone"></i></a>{% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+<div class="reg-topo">
+    <h1>Pedidos por região</h1>
+    <span class="reg-topo-sub">{{ total }} pedidos em aberto · {{ saldo_total|numbr(0) }} t a retirar</span>
+</div>
+
+<form method="get" action="/logistica/regiao" class="reg-busca">
+    <span class="reg-busca-rotulo" title="Caminhão indo para"><i data-lucide="truck"></i><span class="reg-busca-texto">Caminhão indo para</span></span>
+    <select name="uf_destino" id="uf-destino" aria-label="Estado de destino">
+        {% for u in ufs_destino %}<option value="{{ u }}" {{ "selected" if u == uf_destino }}>{{ u }}</option>{% endfor %}
+    </select>
+    <input type="text" name="cidade_destino" id="cidade-destino" list="lista-cidades" value="{{ cidade_destino }}"
+           placeholder="Cidade para onde vai o caminhão" required autocomplete="off" aria-label="Cidade para onde vai o caminhão">
+    <datalist id="lista-cidades">{% for c in cidades_destino %}<option value="{{ c }}">{% endfor %}</datalist>
+    <select name="raio" aria-label="Raio">{% for r in raios %}<option value="{{ r }}" {{ "selected" if r == raio }}>até {{ r }} km</option>{% endfor %}</select>
+    <button type="submit" class="btn btn-primario">Ver</button>
+    {% if destino or da_cidade %}<a class="reg-limpar" href="/logistica/regiao">Limpar</a>{% endif %}
+</form>
+{% if erro_destino %}<div class="erro" style="margin:-4px 0 10px;">{{ erro_destino }}</div>{% endif %}
+
+<div class="reg-grid">
+    <div class="regiao-mapa reg-mapa-caixa">
+        <div id="mapa-regiao" role="region" aria-label="Mapa dos pedidos em aberto"></div>
+        <div class="reg-legenda" aria-hidden="true">
+            <span><i class="leg-bolha"></i>pedidos (cidade)</span>
+            <span><i class="leg-bolha leg-fila"></i>com pedido na fila</span>
+            <span><i class="leg-ponto"></i>fazenda</span>
+            {% if destino %}<span><i class="leg-oport"></i>cliente sem pedido</span>{% endif %}
+            <span><i class="leg-planta"></i>planta</span>
+        </div>
+        <p class="regiao-mapa-falha" id="mapa-falha" hidden>Não foi possível carregar o mapa (sem internet?). As listas ao lado têm as mesmas informações.</p>
+    </div>
+
+    <section class="reg-painel">
+        {% if destino %}
+        {% set podem = oportunidades|rejectattr("oportunidade")|selectattr("cliente.vendedor_nome")|list %}
+        <div class="reg-painel-cab">
+            <div class="reg-destino"><i data-lucide="navigation"></i>Caminhão → <b>{{ destino.cidade }}/{{ destino.uf }}</b> · até {{ raio }} km</div>
+            <div class="reg-abas" role="tablist">
+                <button type="button" role="tab" class="reg-aba" data-aba="carregar" aria-controls="aba-carregar">
+                    <b>Carregar</b><span>{{ proximos|length }} pedido{{ "s" if proximos|length != 1 }} · {{ (proximos|sum(attribute="1.saldo"))|numbr(0) }} t</span></button>
+                <button type="button" role="tab" class="reg-aba" data-aba="oferecer" aria-controls="oportunidades">
+                    <b>Oferecer</b><span>{{ oportunidades|length }} cliente{{ "s" if oportunidades|length != 1 }} sem pedido</span></button>
+            </div>
+        </div>
+
+        <div class="reg-lista" id="aba-carregar" role="tabpanel">
+            <p class="reg-passo">Pedidos em aberto na região: dá para carregar no mesmo caminhão. Mais perto primeiro.</p>
+            {% for d, p, n in proximos %}{{ item_pedido(p, d) }}{% else %}
+            <p class="reg-vazio">Nenhum pedido com local conhecido até {{ raio }} km. Tente um raio maior ou veja a aba <b>Oferecer</b>.</p>
+            {% endfor %}
+        </div>
+
+        <form method="post" action="/logistica/oportunidades" id="form-oport" class="reg-lista reg-oferecer" role="tabpanel" hidden>
+            <div id="oportunidades"></div>
+            <input type="hidden" name="uf_destino" value="{{ destino.uf }}">
+            <input type="hidden" name="cidade_destino" value="{{ destino.cidade }}">
+            <input type="hidden" name="raio" value="{{ raio }}">
+            <p class="reg-passo" title="Clientes da região que ainda não compraram nesta safra: frete mais barato é chance de venda.">
+                <b>1.</b> Marque quem o vendedor deve procurar · <b>2.</b> data do caminhão · <b>3.</b> avise os vendedores.</p>
+            {% if podem %}<label class="reg-todos"><input type="checkbox" id="oport-todos"> Marcar todos ({{ podem|length }})</label>{% endif %}
+            {% for x in oportunidades %}{% set c = x.cliente %}
+            {% set pode = not x.oportunidade and c.vendedor_nome %}
+            <label class="reg-item reg-cliente {{ 'reg-avisado' if x.oportunidade }}" data-mapa="o{{ c.id }}">
+                {% if pode %}<input type="checkbox" name="cliente" value="{{ c.id }}" class="oport-cx" aria-label="Avisar sobre {{ c.fazenda }}">
+                {% else %}<span class="reg-cx-vazio"></span>{% endif %}
+                <span class="reg-item-corpo">
+                    <a class="reg-nome" href="/crm/cliente/{{ c.id }}" title="{{ c.fazenda }} · abrir a ficha do cliente">{{ c.fazenda|nome_cliente }}</a>
+                    <span class="reg-item-l2">
+                        {%- if x.oportunidade %}<span class="reg-status cor-verde" title="Avisado em {{ x.oportunidade.criada_em.strftime('%d/%m') }} por {{ x.oportunidade.criada_por }}">Avisado · até {{ x.oportunidade.valida_ate.strftime("%d/%m") }}</span>
+                        {%- else %}<span class="reg-status fase-{{ fase_cor.get(c.fase) or 'neutra' }}">{{ fase_label.get(c.fase, c.fase) }}</span>{% endif %} ·
+                        {% if c.vendedor_nome %}{{ c.vendedor_nome }}{% else %}<span class="reg-alerta">sem vendedor: não dá para avisar</span>{% endif %}
+                        {{- onde(c.cidade, c.uf, x.dist) }}</span>
+                </span>
+                <span class="reg-item-num">
+                    {% if c.area_plantada_ha %}<b>{{ c.area_plantada_ha|numbr(0) }} ha</b>{% else %}<b class="reg-sem" title="Área plantada não informada no cadastro">sem área</b>{% endif %}
+                    <span title="Linha reta {{ 'até a fazenda' if x.exato else 'até o centro da cidade' }}">{{ distancia(x.dist, x.exato) }}</span>
+                </span>
+                <span class="reg-item-acoes">
+                    <button type="button" class="reg-ico reg-ver" title="Ver no mapa" aria-label="Ver {{ c.fazenda }} no mapa"><i data-lucide="map-pin"></i></button>
+                    <button type="button" class="reg-ico regiao-rota" onclick="abrirRota('cliente={{ c.id }}')" title="Rota das plantas" aria-label="Rota até {{ c.fazenda }}"><i data-lucide="route"></i></button>
+                </span>
+            </label>
+            {% else %}
+            <p class="reg-vazio">Nenhum cliente do cadastro sem pedido em aberto até {{ raio }} km.</p>
+            {% endfor %}
+            {% if oportunidades %}
+            <div class="reg-acao">
+                <div class="reg-acao-campos">
+                    <label>Data do caminhão<input type="date" name="data_caminhao" min="{{ hoje.isoformat() }}"></label>
+                    <label class="reg-acao-recado">Recado (opcional)<input type="text" name="recado" maxlength="300" placeholder="ex.: volta vazio na quinta, cabem 2 cargas"></label>
+                </div>
+                <button type="submit" class="btn btn-primario" id="oport-enviar" disabled><span>Avisar vendedores (<b id="oport-n">0</b>)</span></button>
+                <p class="reg-acao-nota">O cliente entra na fila de trabalho do vendedor até a data do caminhão (sem data, {{ oport_dias }} dias) e sai quando ele registra contato.</p>
+            </div>
+            {% endif %}
+        </form>
+
+        {% elif da_cidade %}
+        <div class="reg-painel-cab" id="lista-cidade">
+            <div class="reg-destino"><i data-lucide="map-pin"></i><b>{{ da_cidade|length }} pedido{{ "s" if da_cidade|length != 1 }}</b> em
+                {{ cidade ~ "/" if cidade }}{{ uf }}{{ " sem cidade conhecida" if not cidade }}
+                <a class="reg-limpar" href="/logistica/regiao">Voltar</a></div>
+        </div>
+        <div class="reg-lista">
+            <p class="reg-passo">Caminhão indo para lá? Use a busca acima com essa cidade para ver também os clientes para oferecer.</p>
+            {% for p in da_cidade %}{{ item_pedido(p) }}{% endfor %}
+        </div>
+
+        {% else %}
+        <div class="reg-lista reg-guia">
+            <h2>Para onde vai o caminhão?</h2>
+            <ol class="reg-passos">
+                <li><b>Informe o destino e o raio</b> na busca acima.</li>
+                <li><b>Carregar:</b> veja os pedidos em aberto na região.</li>
+                <li><b>Oferecer:</b> marque clientes sem pedido ali e avise os vendedores. Frete mais barato vende.</li>
+            </ol>
+            <h3>Onde há mais pedido hoje</h3>
+            {% for nome_uf, nome, c in top_cidades %}
+            <a class="reg-cidade" href="/logistica/regiao?uf={{ nome_uf }}&amp;cidade={{ nome|urlencode }}">
+                <span><b>{{ nome }}/{{ nome_uf }}</b>{% if c.na_fila %} · <span class="reg-na-fila">{{ c.na_fila }} na fila</span>{% endif %}</span>
+                <span class="reg-cidade-n">{{ c.pedidos }} pedido{{ "s" if c.pedidos != 1 }} · {{ c.saldo|numbr(0) }} t</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </section>
+</div>
+
+<p class="reg-rodape">{{ n_local }} de {{ total }} pedidos no mapa ({{ n_exato }} no ponto da fazenda; o resto no centro da cidade).
+    {%- if n_sem_destino %} {{ n_sem_destino }} venda{{ "s" if n_sem_destino != 1 }} para transportadora sem destino final.{% endif %}
+    {%- if destino %} Pedido do NetSuite é ligado ao cliente pelo nome (aproximado): confira antes de oferecer.{% endif %}
+    {%- if sem_local %} {{ sem_local }} cliente{{ "s" if sem_local != 1 }} do cadastro sem cidade não aparece{{ "m" if sem_local != 1 }}.{% endif %}</p>
+
+<details class="reg-resumo">
+    <summary>Por estado e cidade <span>todos os pedidos em aberto</span></summary>
+    <div class="table-wrap"><table class="tabela tabela-regiao">
+        <thead><tr><th>Estado / cidade</th><th class="num">Pedidos</th><th class="num">A retirar</th><th class="num">Na fila</th></tr></thead>
+        <tbody>
+            {% for nome_uf, u in ufs %}
+            <tr class="regiao-uf"><td><b>{{ nome_uf }}</b></td><td class="num"><b>{{ u.pedidos }}</b></td><td class="num"><b>{{ u.saldo|numbr(0) }} t</b></td><td class="num"><b>{{ u.na_fila }}</b></td></tr>
+            {% for nome, c in u.cidades %}
+            <tr><td class="regiao-cidade-nome"><a href="/logistica/regiao?uf={{ nome_uf }}&amp;cidade={{ nome|urlencode }}">{{ nome }}</a></td>
+                <td class="num">{{ c.pedidos }}</td><td class="num">{{ c.saldo|numbr(0) }} t</td><td class="num">{{ c.na_fila }}</td></tr>
+            {% endfor %}
+            {% if u.sem_cidade %}
+            <tr><td class="regiao-cidade-nome"><a class="sub" href="/logistica/regiao?uf={{ nome_uf }}&amp;cidade=&amp;sem_cidade=1">sem cidade conhecida</a></td>
+                <td class="num">{{ u.sem_cidade }}</td><td class="num">{{ u.saldo_sem_cidade|numbr(0) }} t</td><td></td></tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table></div>
+</details>
+
+{# Mapa: OpenStreetMap via Leaflet (Rafael, 2026-10-03: "OpenStreetMap + rota Google").
+   Sem chave nem custo; a rota de estrada abre dentro do portal (_rota.html). #}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+    // Trocar o estado do destino recarrega a lista de cidades daquele estado
+    var ufSel = document.getElementById("uf-destino");
+    var lista = document.getElementById("lista-cidades");
+    var cache = null;
+    ufSel.addEventListener("change", function () {
+        document.getElementById("cidade-destino").value = "";
+        (cache ? Promise.resolve(cache) : fetch("/static/municipios_coordenadas.json").then(function (r) { return r.json(); }))
+            .then(function (dados) {
+                cache = dados;
+                lista.innerHTML = "";
+                Object.keys(dados.municipios[ufSel.value] || {}).sort().forEach(function (nome) {
+                    var o = document.createElement("option"); o.value = nome; lista.appendChild(o);
+                });
+            });
+    });
+})();
+var BOLHAS = {{ bolhas|tojson }};
+var ALFINETES = {{ alfinetes|tojson }};
+var DESTINO = {{ destino|tojson if destino else "null" }};
+var PLANTAS = {{ plantas|tojson }};
+var OPORTUNIDADES = {{ oport_mapa|tojson }};
+var CIDADE_SEL = {{ {"uf": uf, "cidade": cidade}|tojson }};
+var MARCADORES = {};  // chave da lista (p<id>, c<uf>|<cidade>, o<id>) -> marcador, pra lista e mapa andarem juntos
+var MAPA = null;
+(function () {
+    function esc(t) {
+        return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) {
+            return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+        });
+    }
+    function t(n) { return Math.round(n).toLocaleString("pt-BR") + " t"; }
+    // encodeURIComponent nao codifica o apostrofo ("Pau D'Arco"), que quebraria o onclick
+    function rota(params) { return '<a href="#" onclick="abrirRota(\'' + esc(params.replace(/'/g, "%27")) + '\'); return false;">Rota das plantas</a>'; }
+    if (!window.L) { document.getElementById("mapa-falha").hidden = false; document.getElementById("mapa-regiao").hidden = true; return; }
+
+    var mapa = MAPA = L.map("mapa-regiao", {scrollWheelZoom: false});
+    var camada = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(mapa);
+    var falhas = 0;
+    camada.on("tileerror", function () { if (++falhas === 12) document.getElementById("mapa-falha").hidden = false; });
+    // Rolagem da pagina nao da zoom sem querer; clicar no mapa libera a roda do mouse
+    mapa.on("click", function () { mapa.scrollWheelZoom.enable(); });
+
+    var limites = [];
+    var maxSaldo = Math.max.apply(null, BOLHAS.map(function (b) { return b.saldo; }).concat([1]));
+    BOLHAS.slice().sort(function (a, b) { return b.saldo - a.saldo; }).forEach(function (b) {
+        var sel = CIDADE_SEL.uf === b.uf && CIDADE_SEL.cidade === b.cidade;
+        var cor = b.na_fila ? "#B45309" : "#33247A";
+        MARCADORES["c" + b.uf + "|" + b.cidade] = L.circleMarker([b.lat, b.lon], {
+            radius: 6 + 20 * Math.sqrt(b.saldo / maxSaldo), color: sel ? "#16151D" : "#fff", weight: sel ? 3 : 1.5,
+            fillColor: cor, fillOpacity: sel ? 0.85 : 0.55
+        }).addTo(mapa).bindPopup(
+            "<b>" + esc(b.cidade) + "/" + esc(b.uf) + "</b><br>" + b.pedidos + " pedido" + (b.pedidos !== 1 ? "s" : "") + " · "
+            + t(b.saldo) + " a retirar" + (b.na_fila ? "<br>" + b.na_fila + " na fila" : "")
+            + '<br><span class="regiao-pop-nota">Ponto no centro da cidade</span>'
+            + '<div class="regiao-pop-acoes"><a href="/logistica/regiao?uf=' + encodeURIComponent(b.uf) + "&cidade="
+            + encodeURIComponent(b.cidade) + '">Ver os pedidos</a>'
+            + rota("uf=" + encodeURIComponent(b.uf) + "&cidade=" + encodeURIComponent(b.cidade)) + "</div>");
+        limites.push([b.lat, b.lon]);
+    });
+    ALFINETES.forEach(function (a) {
+        MARCADORES["p" + a.id] = L.circleMarker([a.lat, a.lon], {radius: 7, color: "#fff", weight: 2, fillColor: "#16151D", fillOpacity: 0.95})
+            .addTo(mapa).bindPopup(
+                "<b>" + esc(a.cliente) + "</b><br>" + esc(a.pedido) + " · " + esc(a.cidade) + "<br>" + t(a.saldo) + " a retirar"
+                + (a.fila ? "<br>Fila: " + esc(a.fila) : "")
+                + '<div class="regiao-pop-acoes"><a href="/logistica?abrir=' + a.id + "#row-" + a.id + '">Abrir o pedido</a>'
+                + rota("pedido=" + a.id) + "</div>");
+        limites.push([a.lat, a.lon]);
+    });
+    OPORTUNIDADES.forEach(function (o) {
+        MARCADORES["o" + o.id] = L.circleMarker([o.lat, o.lon], {radius: 6, color: "#fff", weight: 1.5, fillColor: "#1E8E4E", fillOpacity: 0.9})
+            .addTo(mapa).bindPopup(
+                "<b>" + esc(o.nome) + "</b><br>" + esc(o.fase) + " · " + esc(o.vendedor) + "<br>a " + o.dist + " km do destino"
+                + (o.exato ? "" : '<br><span class="regiao-pop-nota">Ponto no centro da cidade</span>')
+                + '<div class="regiao-pop-acoes"><a href="/crm/cliente/' + o.id + '">Abrir a ficha</a>' + rota("cliente=" + o.id) + "</div>");
+    });
+    PLANTAS.forEach(function (p) {
+        L.marker([p.lat, p.lon], {icon: L.divIcon({
+            className: "regiao-planta", html: "<span>Planta " + esc(p.nome.split("/")[0]) + "</span>", iconSize: null
+        }), title: "Planta " + p.nome + (p.aproximado ? " (ponto aproximado)" : "")}).addTo(mapa);
+        limites.push([p.lat, p.lon]);
+    });
+    if (DESTINO) {
+        L.circle([DESTINO.lat, DESTINO.lon], {
+            radius: DESTINO.raio_km * 1000, color: "#B8A800", weight: 2, dashArray: "6 5", fillColor: "#E8D84A", fillOpacity: 0.15
+        }).addTo(mapa);
+        L.marker([DESTINO.lat, DESTINO.lon], {icon: L.divIcon({
+            className: "regiao-caminhao", html: "<span>Caminhão → " + esc(DESTINO.cidade) + "</span>", iconSize: null
+        })}).addTo(mapa);
+        // (circle.getBounds() so funciona com o mapa ja posicionado)
+        mapa.fitBounds(L.latLng(DESTINO.lat, DESTINO.lon).toBounds(DESTINO.raio_km * 2000), {padding: [20, 20]});
+    } else if (CIDADE_SEL.cidade && BOLHAS.some(function (b) { return b.uf === CIDADE_SEL.uf && b.cidade === CIDADE_SEL.cidade; })) {
+        var b = BOLHAS.filter(function (x) { return x.uf === CIDADE_SEL.uf && x.cidade === CIDADE_SEL.cidade; })[0];
+        mapa.setView([b.lat, b.lon], 9);
+    } else if (limites.length) {
+        mapa.fitBounds(limites, {padding: [30, 30]});
+    } else {
+        mapa.setView([-6.5, -48.5], 5);  // regiao de operacao (MA/PA/TO)
+    }
+})();
+(function () {
+    // ---- Abas Carregar / Oferecer (volta na aba certa depois de avisar: #oferecer)
+    var abas = document.querySelectorAll(".reg-aba");
+    var paineis = {carregar: document.getElementById("aba-carregar"), oferecer: document.getElementById("form-oport")};
+    function abrirAba(nome) {
+        abas.forEach(function (a) {
+            var ativa = a.dataset.aba === nome;
+            a.classList.toggle("ativa", ativa);
+            a.setAttribute("aria-selected", ativa ? "true" : "false");
+        });
+        Object.keys(paineis).forEach(function (k) { if (paineis[k]) paineis[k].hidden = k !== nome; });
+    }
+    abas.forEach(function (a) { a.addEventListener("click", function () { abrirAba(a.dataset.aba); }); });
+    if (abas.length) abrirAba(location.hash === "#oferecer" || location.hash === "#oportunidades" ? "oferecer" : "carregar");
+
+    // ---- Lista e mapa andam juntos: "ver no mapa" leva o mapa ate o ponto e abre o balao
+    document.querySelectorAll(".reg-ver").forEach(function (botao) {
+        botao.addEventListener("click", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            var m = MARCADORES[botao.closest(".reg-item").dataset.mapa];
+            if (!m || !MAPA) return;
+            MAPA.setView(m.getLatLng(), Math.max(MAPA.getZoom(), 9));
+            m.openPopup();
+            document.getElementById("mapa-regiao").scrollIntoView({block: "nearest", behavior: "smooth"});
+        });
+    });
+
+    document.querySelectorAll(".reg-item-pedido").forEach(function (linha) {
+        var botao = linha.querySelector(".reg-ver");
+        if (!botao) return;
+        linha.title = "Clique para ver no mapa";
+        linha.addEventListener("click", function (e) { if (!e.target.closest("a, button")) botao.click(); });
+    });
+
+    // ---- Listas compridas: os 10 primeiros e "Mostrar os outros N" (sem rolagem dentro de rolagem)
+    document.querySelectorAll(".reg-lista").forEach(function (lista) {
+        var itens = lista.querySelectorAll(".reg-item");
+        if (itens.length <= 12) return;
+        for (var i = 10; i < itens.length; i++) itens[i].classList.add("reg-oculto");
+        var mais = document.createElement("button");
+        mais.type = "button";
+        mais.className = "reg-mais";
+        mais.textContent = "Mostrar os outros " + (itens.length - 10);
+        mais.addEventListener("click", function () {
+            lista.querySelectorAll(".reg-oculto").forEach(function (el) { el.classList.remove("reg-oculto"); });
+            mais.remove();
+        });
+        itens[itens.length - 1].after(mais);
+    });
+
+    // ---- Oferecer: marcar clientes, contar e destacar no mapa
+    var form = document.getElementById("form-oport");
+    if (!form) return;
+    var caixas = form.querySelectorAll(".oport-cx"), todos = document.getElementById("oport-todos");
+    var botao = document.getElementById("oport-enviar"), n = document.getElementById("oport-n");
+    function destacar(caixa) {
+        var m = MARCADORES["o" + caixa.value];
+        if (m) m.setStyle(caixa.checked ? {radius: 9, color: "#16151D", weight: 2.5, fillColor: "#F59E0B"}
+                                        : {radius: 6, color: "#fff", weight: 1.5, fillColor: "#1E8E4E"});
+        caixa.closest(".reg-item").classList.toggle("marcado", caixa.checked);
+    }
+    function contar() {
+        var marcados = form.querySelectorAll(".oport-cx:checked").length;
+        if (n) n.textContent = marcados;
+        if (botao) botao.disabled = marcados === 0;
+        if (todos) todos.checked = marcados > 0 && marcados === caixas.length;
+    }
+    caixas.forEach(function (c) { c.addEventListener("change", function () { destacar(c); contar(); }); });
+    if (todos) todos.addEventListener("change", function () { caixas.forEach(function (c) { c.checked = todos.checked; destacar(c); }); contar(); });
+    form.addEventListener("submit", function () { botao.disabled = true; botao.textContent = "Avisando..."; });
+})();
+</script>
+{% endblock %}

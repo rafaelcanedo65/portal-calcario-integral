@@ -1,0 +1,79 @@
+{# Lista de clientes (Carteira, listas por fase e funil por estado): mesmo
+   formato dos itens da fila -- avatar, nome em destaque, resumo embaixo. #}
+<form method="get" class="form-inline lista-filtros" style="margin-bottom:12px;">
+    <label class="lista-busca">Buscar
+        <input type="text" id="busca-nome" placeholder="Nome do cliente" onkeydown="if (event.key === 'Enter') event.preventDefault();">
+    </label>
+    <label>Cidade
+        <select name="cidade" onchange="this.form.submit()">
+            <option value="">Todas</option>
+            {% for c in cidades %}
+            <option value="{{ c }}" {% if filtros.cidade == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Ordenar por
+        <select name="ordenar" onchange="this.form.submit()">
+            <option value="">Padrão (nome)</option>
+            <option value="sazonalidade" {% if filtros.ordenar == "sazonalidade" %}selected{% endif %}>Época de compra (quem compra agora primeiro)</option>
+            <option value="antigo" {% if filtros.ordenar == "antigo" %}selected{% endif %}>Contato mais antigo primeiro</option>
+            <option value="recente" {% if filtros.ordenar == "recente" %}selected{% endif %}>Contato mais recente primeiro</option>
+        </select>
+    </label>
+    <label class="filtro-check">
+        <input type="checkbox" name="pendentes" value="1" {% if filtros.pendentes == "1" %}checked{% endif %} onchange="this.form.submit()">
+        Só quem precisa de contato (14 dias ou mais, ou nunca contatado)
+    </label>
+    <label class="filtro-check">
+        <input type="checkbox" name="incompleto" value="1" {% if filtros.incompleto == "1" %}checked{% endif %} onchange="this.form.submit()">
+        Só quem tem cadastro incompleto
+    </label>
+</form>
+{% if filtros.ordenar == "sazonalidade" %}
+<p class="nota" style="margin:0 0 12px;">
+    Estamos em {{ mes_atual_nome|lower }}. Quem costuma comprar agora (ou está perto de comprar) aparece primeiro;
+    quem não tem histórico de compra registrado fica no fim, do contato mais antigo para o mais recente.
+</p>
+{% endif %}
+
+<div class="clientes-lista" id="tabela-clientes">
+    {% for c in clientes %}
+    {% set dias = c.dias_desde_ultima_interacao() %}
+    {% set prioridade = c.prioridade_sazonal() %}
+    {% if dias is none %}{% set recencia = "cc-muted" %}
+    {% elif dias <= 7 %}{% set recencia = "recencia-boa" %}
+    {% elif dias <= 30 %}{% set recencia = "recencia-media" %}
+    {% else %}{% set recencia = "recencia-ruim" %}{% endif %}
+    <a href="{{ ficha_base_url }}/{{ c.id }}" class="client-card" data-nome="{{ c.fazenda|lower }}">
+        <span class="avatar">{{ iniciais_cliente(c.fazenda) }}</span>
+        <div class="cc-principal">
+            <div class="cc-nome-linha">
+                <span class="cc-nome">{{ c.fazenda }}</span>
+                {% if c.categoria() %}<span class="cat-badge" title="Categoria {{ c.categoria() }}">{{ c.categoria() }}</span>{% endif %}
+                {% if not fase %}<span class="log-badge {{ fase_cor_dict[c.fase] }}">{{ fase_label_dict[c.fase] }}</span>{% endif %}
+                {% if c.cadastro_incompleto() %}<span class="log-badge gold" title="Falta: {{ c.campos_faltando()|join(', ') }}">Cadastro incompleto</span>{% endif %}
+            </div>
+            <div class="ccrow">{{ c.proprietario or "Sem proprietário" }} · {{ c.cidade or "Cidade não informada" }}, {{ c.uf }}{% if c.telefone and c.telefone != "—" %} · {{ c.telefone }}{% endif %}</div>
+        </div>
+        <div class="cc-lateral">
+            <span>
+                {% if prioridade is not none and prioridade == 0 %}<span class="log-badge green">Compra em {{ c.meses_compra_texto() }}</span>
+                {% elif c.meses_compra_texto() %}Compra em {{ c.meses_compra_texto() }}
+                {% else %}<span class="cc-muted">Sem histórico de compra</span>{% endif %}
+            </span>
+            <span class="{{ recencia }}"><span class="cc-ponto"></span>{% if dias is none %}Nunca contatado{% elif dias == 0 %}Contato hoje{% else %}Contato há {{ dias }} dia{{ "s" if dias != 1 }}{% endif %}</span>
+        </div>
+    </a>
+    {% else %}
+    <p class="cc-vazio">Nenhum cliente {{ "na carteira" if not fase else "nesta fase" }}.</p>
+    {% endfor %}
+</div>
+
+<script>
+document.getElementById("busca-nome").addEventListener("input", function () {
+    const termo = this.value.trim().toLowerCase();
+    document.querySelectorAll("#tabela-clientes .client-card").forEach(function (card) {
+        card.style.display = card.dataset.nome.includes(termo) ? "" : "none";
+    });
+});
+</script>

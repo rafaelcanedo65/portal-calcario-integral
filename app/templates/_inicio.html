@@ -1,0 +1,44 @@
+{# Pecas comuns das paginas iniciais (Rafael, 2026-10-04: mesma logica para admin, vendedor, logistica e financeiro).
+   Logica em inicio.py; estilos .ai-* no style.css. #}
+
+{# Saudacao: no desktop vai pra barra do topo (base.html, block topo_titulo); no celular, uma linha no comeco da pagina #}
+{% macro saudacao_topo(saudacao, data_extenso, n_tarefas, urgente) -%}
+<span class="topo-saudacao"><b>{{ saudacao }}</b> · {{ data_extenso }}
+    {%- if n_tarefas %} · <span class="topo-tarefas">{{ n_tarefas }} tarefa{{ "s" if n_tarefas != 1 }} esperando você</span>{% endif %}</span>
+{%- endmacro %}
+
+{% macro saudacao_celular(saudacao, data_extenso) -%}
+<p class="ai-saudacao-celular"><b>{{ saudacao }}</b> · {{ data_extenso }}</p>
+{%- endmacro %}
+
+{# Tarefas = prioridade: unico bloco colorido da pagina. "urgente" = cartao vermelho de Prioridade maxima (o elo do
+   pagamento a vista de cada perfil); "tarefas" = cartoes com numero, verbo e o que trava. #}
+{% macro painel_tarefas(urgente, tarefas, vazio="Nenhuma tarefa esperando você", rodape=None, titulo="Fila de trabalho") %}
+{% set n = tarefas|length + (1 if urgente else 0) %}
+<section class="ai-tarefas {{ 'ai-tarefas-ok' if not tarefas and not urgente }}" aria-label="{{ titulo }}">
+    {# Titulo (Rafael, 2026-10-04): o painel do topo e a "Fila de trabalho" da pessoa #}
+    <h2 class="ai-tarefas-titulo">{{ titulo }}{% if n %}<span>{{ n }} tarefa{{ "s" if n != 1 }}</span>{% endif %}</h2>
+    {% if urgente %}
+    <a class="ai-urgente" href="{{ urgente.link }}" title="{{ urgente.texto }}">
+        <span class="ai-urgente-selo"><i data-lucide="siren"></i>Prioridade máxima</span>
+        <span class="ai-urgente-txt"><b>{{ urgente.acao }}</b><small>{{ urgente.detalhe }} · {{ urgente.efeito }}</small></span>
+        <span class="ai-urgente-btn">{{ urgente.botao }}<i data-lucide="arrow-right"></i></span>
+    </a>
+    {% endif %}
+    {% if tarefas %}
+    <ol class="ai-tarefas-lista">
+        {% for p in tarefas %}
+        <li><a class="ai-tarefa ai-{{ p.nivel }}" href="{{ p.link }}" title="{{ p.texto }}">
+            <span class="ai-tarefa-n">{{ p.n }}</span>
+            <span class="ai-tarefa-txt"><b>{{ p.acao_um if p.n == 1 else p.acao }}</b>
+                <small>{% if p.nivel == "trava" %}<i data-lucide="octagon-alert"></i>{% endif %}{{ p.efeito }}{{ " · " ~ p.desde if p.desde }}</small></span>
+            {% if p.botao %}<span class="ai-tarefa-btn">{{ p.botao }}<i data-lucide="arrow-right"></i></span>{% endif %}
+        </a></li>
+        {% endfor %}
+    </ol>
+    {% elif not urgente %}
+    <p class="ai-tarefas-vazio"><i data-lucide="circle-check"></i>{{ vazio }}</p>
+    {% endif %}
+    {% if rodape %}<p class="ai-tarefas-rodape">{{ rodape }}</p>{% endif %}
+</section>
+{% endmacro %}

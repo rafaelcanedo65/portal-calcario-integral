@@ -1,26 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Carteira{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem;">
-    <a class="back-btn" href="/vendedor/crm">&lsaquo; Voltar</a>
-    <a class="back-btn" style="margin-bottom:0;" href="/crm/cliente/novo">+ Novo cliente</a>
+<div class="pagina-cab">
+    <div>
+        <h1>Carteira de clientes</h1>
+        <p class="pagina-sub">{{ total }} cliente{{ "s" if total != 1 }} na carteira</p>
+    </div>
 </div>
-<h1>Carteira de Clientes</h1>
 
-<div class="carteira-resumo">
-    <div class="cr-clientes">
-        <span class="cr-num">{{ total }}</span>
-        <span class="cr-label">clientes na carteira</span>
-    </div>
-    <div class="cr-estados">
-        {% for uf, info in por_estado.items() %}
-        <div class="cr-estado-row">
-            <div class="cr-estado-nome">{{ uf }}</div>
-            <div class="cr-estado-bar"><div class="cr-estado-fill" style="width:{{ (info.clientes / total * 100) if total else 0 }}%;"></div></div>
-            <div class="cr-estado-info">{{ info.clientes }} clientes · {{ info.area|numbr(0) }} ha</div>
+<div class="carteira-topo">
+    <div class="carteira-resumo">
+        <div class="cr-clientes">
+            <span class="cr-titulo">Por estado</span>
         </div>
-        {% endfor %}
+        <div class="cr-estados">
+            {% for uf, info in por_estado.items() %}
+            <div class="cr-estado-row">
+                <div class="cr-estado-nome">{{ uf }}</div>
+                <div class="cr-estado-bar"><div class="cr-estado-fill" style="width:{{ (info.clientes / total * 100) if total else 0 }}%;"></div></div>
+                <div class="cr-estado-info">{{ info.clientes }} clientes · {{ info.area|numbr(0) }} ha</div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
+
+    {% if total %}
+    <div class="carteira-resumo">
+        <div class="cr-clientes">
+            <span class="cr-titulo">Forma de pagamento</span>
+            <span class="cr-label">{{ nao_classificados }} sem classificação</span>
+        </div>
+        <div class="cr-estados">
+            {% for fp in forma_pagamento_dist %}
+            <div class="cr-estado-row">
+                <div class="cr-estado-nome" title="{{ fp.label }}">{{ fp.label }}</div>
+                <div class="cr-estado-bar"><div class="cr-estado-fill" style="width:{{ fp.pct }}%;"></div></div>
+                <div class="cr-estado-info">{{ fp.qtd }} cliente{{ "s" if fp.qtd != 1 }} · {{ "%.1f"|format(fp.pct) }}%</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div class="stats-grid">
@@ -32,4 +52,7 @@
     </a>
     {% endfor %}
 </div>
+
+<h2 class="secao-titulo">Todos os clientes <span class="qtd">{{ clientes|length }}</span></h2>
+{% include "_lista_clientes_tabela.html" %}
 {% endblock %}

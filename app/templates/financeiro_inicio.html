@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_inicio.html" import saudacao_topo, saudacao_celular, painel_tarefas %}
+{% block title %}Início{% endblock %}
+{% block topo_titulo %}{{ saudacao_topo(saudacao, data_extenso, tarefas|length + (1 if urgente else 0), urgente) }}{% endblock %}
+{% block content %}
+{# Inicio do Financeiro (Rafael, 2026-10-04): mesma logica do Inicio do admin. Prioridade maxima = conferir o
+   comprovante do pedido a vista (o caminhao so carrega depois). Logica em inicio.py. #}
+<div class="ai">
+{{ saudacao_celular(saudacao, data_extenso) }}
+{{ painel_tarefas(urgente, tarefas, vazio="Nenhum pagamento esperando conferência e nada a registrar.") }}
+
+<div class="ai-topo3 ai-topo2">
+    <section class="ai-cartao" aria-label="Conferência dos pedidos à vista">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Pagamentos à vista <span class="ai-dica">o caminhão espera esta conferência</span></h2>
+            <a class="ai-link" href="/financeiro/pagamentos">Abrir<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/financeiro/pagamentos" title="Comprovantes esperando conferência agora">
+                <span>Esperando agora</span><b class="{{ 'ai-alerta' if n_conferir }}">{{ n_conferir }}</b><small>comprovante{{ "s" if n_conferir != 1 }}</small></a>
+            <a class="ai-num" href="/financeiro/pagamentos" title="Comprovantes conferidos hoje (confirmados ou recusados)">
+                <span>Conferidos hoje</span><b>{{ conferidos_hoje }}</b><small>comprovantes</small></a>
+            <a class="ai-num" href="/relatorios?r=pagamentos" title="Do envio do comprovante até a confirmação, nos últimos 30 dias">
+                <span>Tempo médio</span>
+                <b>{% if tempo_medio is none %}—{% elif tempo_medio < 1 %}{{ (tempo_medio * 60)|round|int }} min{% else %}{{ tempo_medio|numbr(1) }} h{% endif %}</b>
+                <small>{{ "de conferência" if tempo_medio is not none else "nada em 30 dias" }}</small></a>
+            <a class="ai-num" href="/relatorios?r=pagamentos" title="Comprovantes recusados nos últimos 30 dias">
+                <span>Recusados</span><b>{{ recusados_30 }}</b><small>em 30 dias</small></a>
+        </div>
+    </section>
+
+    <section class="ai-cartao" aria-label="Recebimentos">
+        <div class="ai-cartao-cab">
+            <h2 class="ai-titulo">Recebimentos <span class="ai-dica">a comissão do vendedor sai daqui</span></h2>
+            <a class="ai-link" href="/financeiro/recebimentos">Abrir<i data-lucide="chevron-right"></i></a>
+        </div>
+        <div class="ai-nums">
+            <a class="ai-num" href="/relatorios?r=comissoes&periodo=mes" title="Recebimentos com data neste mês">
+                <span>Recebido no mês</span><b>{{ reais_compacto(recebido_mes) }}</b><small>{{ reais(recebido_mes) }}</small></a>
+            <a class="ai-num" href="/financeiro/recebimentos" title="O que falta receber dos pedidos (sem os à vista em aberto)">
+                <span>A receber</span><b>{{ reais_compacto(total_a_receber) }}</b><small>{{ n_a_receber }} pedido{{ "s" if n_a_receber != 1 }}</small></a>
+            <a class="ai-num" href="/relatorios?r=comissoes&periodo=mes" title="Comissão liberada pelos recebimentos deste mês">
+                <span>Comissão</span><b>{{ reais_compacto(comissao_mes) }}</b><small>liberada no mês</small></a>
+            <a class="ai-num" href="/relatorios?r=comissoes" title="Relatório de comissões">
+                <span>Relatório</span><b><i data-lucide="file-chart-column"></i></b><small>comissões</small></a>
+        </div>
+    </section>
+</div>
+
+<section class="ai-cartao" aria-label="Últimos movimentos">
+    <div class="ai-cartao-cab"><h2 class="ai-titulo">Últimos movimentos</h2><span class="ai-dica">conferências e recebimentos</span></div>
+    {% if movimentos %}
+    <div class="ai-linhas" style="--cols: 92px minmax(0, 1.3fr) 80px minmax(0, 1.6fr) 120px minmax(0, 1fr);">
+        {% for m in movimentos %}
+        <a class="ai-linha" href="/crm/cliente/{{ m.pedido.cliente_id }}?aba=pedidos#pedido-{{ m.pedido.id }}">
+            <span class="ai-mudo">{{ ha(m.quando) }}</span>
+            <span class="{{ 'ai-alerta' if m.recusado }}">{{ m.o_que }}</span>
+            <b>{{ m.pedido.codigo }}</b>
+            <span>{{ m.pedido.cliente.fazenda|nome_cliente }}</span>
+            <span class="ai-direita">{{ reais(m.valor) }}</span>
+            <span class="ai-mudo">{{ m.quem or "" }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}<p class="ai-mudo">Nada ainda.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

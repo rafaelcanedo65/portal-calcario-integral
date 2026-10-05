@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ "Crie sua senha" if user.senha_temporaria else "Minha senha" }}{% endblock %}
+{% block content %}
+{# 1o acesso (senha temporaria): o portal so libera depois de criar a propria. Depois: "Minha senha" no rodape do menu. #}
+<div class="senha-caixa">
+    {% if user.senha_temporaria %}
+    <h1>Bem-vindo, {{ user.nome_completo.split(" ")[0] }}!</h1>
+    <p class="pagina-sub">Último passo: crie a sua senha. A senha temporária que você recebeu deixa de valer.</p>
+    {% else %}
+    <h1>Trocar minha senha</h1>
+    <p class="pagina-sub">Usuário <b>{{ user.username }}</b>.</p>
+    {% endif %}
+    {% if erro %}<p class="erro">{{ erro }}</p>{% endif %}
+    <form method="post" action="/trocar-senha" class="senha-form">
+        {% if not user.senha_temporaria %}
+        <label>Senha atual<input type="password" name="atual" required autocomplete="current-password" autofocus></label>
+        {% endif %}
+        <label>Senha nova<input type="password" name="nova" required minlength="8" autocomplete="new-password" {{ "autofocus" if user.senha_temporaria }}></label>
+        <label>Repita a senha nova<input type="password" name="confirma" required minlength="8" autocomplete="new-password"></label>
+        <p class="nota">Pelo menos 8 caracteres, com letras e números.</p>
+        <button type="submit" class="btn btn-primario">{{ "Criar senha e entrar" if user.senha_temporaria else "Salvar senha nova" }}</button>
+    </form>
+</div>
+{% endblock %}
